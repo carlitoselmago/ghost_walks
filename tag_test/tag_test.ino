@@ -16,7 +16,7 @@ const uint8_t PIN_SS = 4;   // spi select pin
 const char tagid[] = "tag1";
 const char ssid[] = "( o )( o )";
 const char password[] = "todojuntoyenminusculas";
-const char host[] = "192.168.1.139";  // Set this to your computer's IP address
+const char host[] = "192.168.1.255";//"192.168.1.139";  // Set this to your computer's IP address
 const uint16_t port = 8888;
 
 bool connecteddevices[10] = {false, false, false, false, false, false, false, false, false, false};
