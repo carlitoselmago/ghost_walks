@@ -1,32 +1,29 @@
 #include <SPI.h>
-#include "DW1000Ranging.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>
-
+#include "DW1000Ranging.h"
 
 #define SPI_SCK 18
 #define SPI_MISO 19
 #define SPI_MOSI 23
 #define DW_CS 4
- 
+
 // connection pins
 const uint8_t PIN_RST = 27; // reset pin
 const uint8_t PIN_IRQ = 34; // irq pin
 const uint8_t PIN_SS = 4;   // spi select pin
 
-const char* tagid = "tag1";
-const char* ssid = "( o )( o )";
-const char* password = "todojuntoyenminusculas";
-const char* host = "192.168.1.139";  // Set this to your computer's IP address
+const char tagid[] = "tag1";
+const char ssid[] = "( o )( o )";
+const char password[] = "todojuntoyenminusculas";
+const char host[] = "192.168.1.139";  // Set this to your computer's IP address
 const uint16_t port = 8888;
 
-
-bool connecteddevices[10]={false,false,false,false,false,false,false,false,false,false};
-float anchorsdistances[10]={0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
+bool connecteddevices[10] = {false, false, false, false, false, false, false, false, false, false};
+float anchorsdistances[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
 WiFiUDP udp;
 char incomingPacket[255];  // Buffer for incoming packets
-
 
 void setup()
 {
@@ -41,96 +38,82 @@ void setup()
     DW1000Ranging.attachInactiveDevice(inactiveDevice);
     //Enable the filter to smooth the distance
     DW1000Ranging.useRangeFilter(true);
- 
+
     //we start the module as a tag
     DW1000Ranging.startAsTag("01:00:22:EA:82:60:3B:9C", DW1000.MODE_LONGDATA_RANGE_LOWPOWER); // add to the first number 01, 02, 03
 
     WiFi.begin(ssid, password);
 
     while (WiFi.status() != WL_CONNECTED) {
-      delay(1000);
-      Serial.println("Connecting to WiFi...");
+        delay(1000);
+        Serial.println("Connecting to WiFi...");
     }
 
     Serial.println("Connected to WiFi");
     Serial.print("ESP32 IP Address: ");
     Serial.println(WiFi.localIP());
     udp.begin(port);  // Start UDP
-  }
- 
+}
+
 void loop()
 {
     DW1000Ranging.loop();
 }
- 
+
 void newRange()
 {
-    int id=getAnchorIntId(DW1000Ranging.getDistantDevice()->getShortAddress());
-    float range=DW1000Ranging.getDistantDevice()->getRange();
-    anchorsdistances[id-1]=range;
+    int id = getAnchorIntId(DW1000Ranging.getDistantDevice()->getShortAddress());
+    float range = DW1000Ranging.getDistantDevice()->getRange();
+    anchorsdistances[id - 1] = range;
     Serial.print("from: ");
     Serial.print(id);
-    //Serial.print(DW1000Ranging.getDistantDevice()->getShortAddress(), HEX);
     Serial.print("\t Range: ");
     Serial.print(DW1000Ranging.getDistantDevice()->getRange());
     Serial.println(" m");
-    //Serial.print("\t RX power: ");
-    //Serial.print(DW1000Ranging.getDistantDevice()->getRXPower());
-    //Serial.println(" dBm");
 
-    //get all active anchors distances and put them together in a single call
-    String message ="{'tagid':'" + String(tagid) + "','anchors':[";
-    // + String(x, 4) + ",'y':" + String(y, 4) + "}";
-    for (int i=0; i<sizeof  anchorsdistances/sizeof  anchorsdistances[0]; i++)
-				
-				{
-					int val =  anchorsdistances[i];
-          if (val>0.0){
-            message+=String(i+1)+":"+String(val)+",";
-          }
-              
-				{
-    message=removeLastChar(message); //remove last coma
+    // Get all active anchors distances and put them together in a single call
+    char message[512];
+    snprintf(message, sizeof(message), "{'tagid':'%s','anchors':{", tagid);
 
-    message+="]}";
+    char temp[50];
+    for (int i = 0; i < 10; i++) {
+        float val = anchorsdistances[i];
+        if (val > 0.0) {
+            snprintf(temp, sizeof(temp), "'%d':%.2f,", i + 1, val);
+            strncat(message, temp, sizeof(message) - strlen(message) - 1);
+        }
+    }
+
+    removeLastChar(message); // Remove last comma
+    strncat(message, "}}", sizeof(message) - strlen(message) - 1);
+
     sendMessage(message);
-    
 }
- 
-void newDevice(DW1000Device *device) { 
-    int id=getAnchorIntId(device->getShortAddress());
-    //connecteddevices[id]=true;
-    //Serial.print("ranging init; 1 device added ! -> ");
-    //Serial.print(" short:");
-    //Serial.println(device->getShortAddress(), HEX);
+
+void newDevice(DW1000Device *device) {
+    int id = getAnchorIntId(device->getShortAddress());
     Serial.print("NEW DEVICE CONNECTED: ");
     Serial.println(id);
 }
- 
+
 void inactiveDevice(DW1000Device *device) {
-    //Serial.print("delete inactive device: ");
-    //Serial.println(device->getShortAddress(), HEX);
-    int id=getAnchorIntId(device->getShortAddress());
-    anchorsdistances[id-1]=0.0;
-    //connecteddevices[id]=false;
+    int id = getAnchorIntId(device->getShortAddress());
+    anchorsdistances[id - 1] = 0.0;
     Serial.print("DEVICE DISCONNECTED: ");
     Serial.println(id);
-
 }
 
-String removeLastChar(String str) {
-  int length = str.length();
-  if (length > 0) {
-    str.remove(length - 1); // Remove the last character
-  }
-  return str;
+void removeLastChar(char *str) {
+    int length = strlen(str);
+    if (length > 0) {
+        str[length - 1] = '\0'; // Remove the last character
+    }
 }
 
-
-void sendMessage(String message) {
-  udp.beginPacket(host, port);
-  udp.write((const uint8_t*)message.c_str(), message.length());
-  udp.endPacket();
+void sendMessage(const char *message) {
+    udp.beginPacket(host, port);
+    udp.write((const uint8_t*)message, strlen(message));
+    udp.endPacket();
 }
 
 int getAnchorIntId(uint16_t shortAddress) {
