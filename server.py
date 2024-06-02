@@ -43,6 +43,7 @@ WHITE = (255, 255, 255)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
 BLACK = (0, 0, 0)
+GREY = (192, 192, 192)
 
 def calculate_position(data, anchor_positions):
     distances = data['anchors']
@@ -72,11 +73,12 @@ def calculate_position(data, anchor_positions):
     
     return pos[0][0], pos[1][0]
 
-def draw_grid():
+def draw_grid(active_anchors):
     screen.fill(WHITE)
     for anchor_id, (ax_pos, ay_pos) in anchor_positions.items():
         px_pos, py_pos = int(ax_pos * 100 + 50), int(600 - (ay_pos * 100 + 50))
-        pygame.draw.circle(screen, RED, (px_pos, py_pos), 5)
+        color = RED if anchor_id in active_anchors else GREY
+        pygame.draw.circle(screen, color, (px_pos, py_pos), 5)
         font = pygame.font.Font(None, 36)
         text = font.render(f"A{anchor_id}", True, BLACK)
         screen.blit(text, (px_pos - 15, py_pos - 25))
@@ -99,7 +101,8 @@ try:
                 print(f"Position: X={x:.2f}, Y={y:.2f}")
 
                 if args.gui:
-                    draw_grid()
+                    active_anchors = anchors.keys()
+                    draw_grid(active_anchors)
                     tag_px, tag_py = int(x * 100 + 50), int(600 - (y * 100 + 50))
                     pygame.draw.circle(screen, BLUE, (tag_px, tag_py), 5)
                     font = pygame.font.Font(None, 36)
