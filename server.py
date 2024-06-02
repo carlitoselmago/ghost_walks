@@ -3,8 +3,7 @@ import time
 import json
 import struct
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+import pygame
 
 # Configuration
 LISTEN_UDP_IP = "0.0.0.0"  # Listen on all available network interfaces
@@ -21,10 +20,22 @@ send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 anchor_positions = {
     "1": (0, 0),
-    "2": (2.5, 0),
-    "3": (0, 2),
+    "2": (5, 0),
+    "3": (0, 3),
+    "4":(5,3)
     # Add more anchors as needed
 }
+
+# Pygame setup
+pygame.init()
+screen = pygame.display.set_mode((800, 600))
+pygame.display.set_caption("UWB Positioning System")
+
+# Colors
+WHITE = (255, 255, 255)
+RED = (255, 0, 0)
+BLUE = (0, 0, 255)
+BLACK = (0, 0, 0)
 
 def calculate_position(data, anchor_positions):
     distances = data['anchors']
@@ -54,49 +65,55 @@ def calculate_position(data, anchor_positions):
     
     return pos[0][0], pos[1][0]
 
-def update(frame):
+def roundDec(value,dec=2):
+    return str(round(value, dec))
+
+def send_message_to_esp32(message,address):
     try:
-        data, addr = listen_sock.recvfrom(1024)  # Buffer size is 1024 bytes
-        msg = json.loads(data.decode('utf-8').replace("'", "\""))
-
-        x, y = calculate_position(msg, anchor_positions)
-        
-        ax.clear()
-        
-        # Plot anchors
-        for anchor_id, (ax_pos, ay_pos) in anchor_positions.items():
-            ax.plot(ax_pos, ay_pos, 'ro')
-            ax.text(ax_pos, ay_pos, f"Anchor {anchor_id}", fontsize=12, ha='right')
-        
-        # Plot tag
-        ax.plot(x, y, 'bo')
-        ax.text(x, y, 'Tag', fontsize=12, ha='left')
-        
-        # Set plot limits
-        ax.set_xlim(-1, 10)
-        ax.set_ylim(-1, 10)
-        ax.set_title(f"Position: X={x:.2f}, Y={y:.2f}")
-
+        message_bytes = struct.pack('f', message) if isinstance(message, float) else str(message).encode('utf-8')
+        send_sock.sendto(message_bytes, (address, SEND_UDP_PORT))
+        print(f"Sent message: {message} to {address}:{SEND_UDP_PORT}")
+    except PermissionError as e:
+        print(f"PermissionError: {e}")
     except Exception as e:
         print(f"An error occurred: {e}")
 
-# Set up plot
-fig, ax = plt.subplots()
-
-# Create animation
-ani = FuncAnimation(fig, update, interval=200)
-
-plt.show()
-
-# Close sockets on exit
-def close_sockets():
-    listen_sock.close()
-    send_sock.close()
+def draw_grid():
+    screen.fill(WHITE)
+    for anchor_id, (ax_pos, ay_pos) in anchor_positions.items():
+        px_pos, py_pos = int(ax_pos * 100 + 50), int(600 - (ay_pos * 100 + 50))
+        pygame.draw.circle(screen, RED, (px_pos, py_pos), 5)
+        font = pygame.font.Font(None, 36)
+        text = font.render(f"A{anchor_id}", True, BLACK)
+        screen.blit(text, (px_pos - 15, py_pos - 25))
 
 try:
     while True:
-        time.sleep(0.01)  # Keep the script running
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                raise KeyboardInterrupt
+        
+        data, addr = listen_sock.recvfrom(1024)  # Buffer size is 1024 bytes
+        msg = json.loads(data.decode('utf-8').replace("'", "\""))
+
+        anchors = msg["anchors"]
+        tagid = msg["tagid"]
+        x, y = calculate_position(msg, anchor_positions)
+        print(f"Position: X={roundDec(x)}, Y={roundDec(y)}")
+
+        draw_grid()
+        tag_px, tag_py = int(x * 100 + 50), int(600 - (y * 100 + 50))
+        pygame.draw.circle(screen, BLUE, (tag_px, tag_py), 5)
+        font = pygame.font.Font(None, 36)
+        text = font.render("Tag", True, BLACK)
+        screen.blit(text, (tag_px + 10, tag_py - 15))
+
+        pygame.display.flip()
+        time.sleep(0.1)
+
 except KeyboardInterrupt:
     print("\nServer stopped")
 finally:
-    close_sockets()
+    listen_sock.close()
+    send_sock.close()
+    pygame.quit()
