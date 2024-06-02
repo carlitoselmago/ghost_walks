@@ -3,7 +3,7 @@ import time
 import json
 import struct
 import numpy as np
-import pygame
+import argparse
 
 # Configuration
 LISTEN_UDP_IP = "0.0.0.0"  # Listen on all available network interfaces
@@ -11,6 +11,17 @@ LISTEN_UDP_PORT = 8888     # Must match the port used by the ESP32
 
 SEND_UDP_IP = "192.168.1.255"  # Replace with the actual IP address of your ESP32
 SEND_UDP_PORT = 8888
+
+# Argument parser setup
+parser = argparse.ArgumentParser(description="UWB Positioning System")
+parser.add_argument('-gui', action='store_true', help='Enable GUI using Pygame')
+args = parser.parse_args()
+
+if args.gui:
+    import pygame
+    pygame.init()
+    screen = pygame.display.set_mode((800, 600))
+    pygame.display.set_caption("UWB Positioning System")
 
 # Create UDP sockets
 listen_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -26,11 +37,6 @@ anchor_positions = {
     "4": (5, 3)
     # Add more anchors as needed
 }
-
-# Pygame setup
-pygame.init()
-screen = pygame.display.set_mode((800, 600))
-pygame.display.set_caption("UWB Positioning System")
 
 # Colors
 WHITE = (255, 255, 255)
@@ -77,9 +83,10 @@ def draw_grid():
 
 try:
     while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                raise KeyboardInterrupt
+        if args.gui:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    raise KeyboardInterrupt
         
         try:
             while True:
@@ -91,14 +98,15 @@ try:
                 x, y = calculate_position(msg, anchor_positions)
                 print(f"Position: X={x:.2f}, Y={y:.2f}")
 
-                draw_grid()
-                tag_px, tag_py = int(x * 100 + 50), int(600 - (y * 100 + 50))
-                pygame.draw.circle(screen, BLUE, (tag_px, tag_py), 5)
-                font = pygame.font.Font(None, 36)
-                text = font.render("Tag", True, BLACK)
-                screen.blit(text, (tag_px + 10, tag_py - 15))
+                if args.gui:
+                    draw_grid()
+                    tag_px, tag_py = int(x * 100 + 50), int(600 - (y * 100 + 50))
+                    pygame.draw.circle(screen, BLUE, (tag_px, tag_py), 5)
+                    font = pygame.font.Font(None, 36)
+                    text = font.render("Tag", True, BLACK)
+                    screen.blit(text, (tag_px + 10, tag_py - 15))
 
-                pygame.display.flip()
+                    pygame.display.flip()
                 
         except BlockingIOError:
             pass  # No data available, continue loop
@@ -110,4 +118,5 @@ except KeyboardInterrupt:
 finally:
     listen_sock.close()
     send_sock.close()
-    pygame.quit()
+    if args.gui:
+        pygame.quit()
