@@ -24,7 +24,7 @@ if args.gui:
     screen = pygame.display.set_mode((800, 600))
     pygame.display.set_caption("UWB Positioning System")
 
-DB=db()
+DB = db()
 
 # Create UDP sockets
 listen_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -76,7 +76,7 @@ def calculate_position(data, anchor_positions):
     
     return pos[0][0], pos[1][0]
 
-def send_message_to_esp32(message,address):
+def send_message_to_esp32(message, address):
     try:
         message_bytes = struct.pack('f', message) if isinstance(message, float) else str(message).encode('utf-8')
         send_sock.sendto(message_bytes, (address, SEND_UDP_PORT))
@@ -96,7 +96,17 @@ def draw_grid(active_anchors):
         text = font.render(f"A{anchor_id}", True, BLACK)
         screen.blit(text, (px_pos - 15, py_pos - 25))
 
+def draw_heatmap(heatmap_data):
+    max_visits = max(heatmap_data.values(), default=1)
+    for (x, y), visits in heatmap_data.items():
+        intensity = int((visits / max_visits) * 255)
+        color = (255, 255 - intensity, 255 - intensity)
+        px_pos, py_pos = int(x * 100 + 50), int(600 - (y * 100 + 50))
+        pygame.draw.circle(screen, color, (px_pos, py_pos), 10)
+
 try:
+    heatmap_data = {}
+    
     while True:
         if args.gui:
             for event in pygame.event.get():
@@ -113,20 +123,21 @@ try:
                 x, y = calculate_position(msg, anchor_positions)
                 print(f"Position: X={x:.2f}, Y={y:.2f}")
                 
-                #save to db
-                if x==0 or y==0:
-                    pass
-                else:
-                    DB.insertPos(tagid,x,y)
-                norm=DB.getNormValue(x,y)
+                # Save to db and update heatmap data
+                if x != 0 and y != 0:
+                    DB.insertPos(tagid, x, y)
+                    coord = (round(x, 1), round(y, 1))  # rounding to the nearest 0.1 for heatmap purposes
+                    heatmap_data[coord] = heatmap_data.get(coord, 0) + 1
 
+                norm = DB.getNormValue(x, y)
                 response_message = norm
-                print("response msg",response_message) 
-                send_message_to_esp32(response_message,addr[0])
+                print("response msg", response_message) 
+                send_message_to_esp32(response_message, addr[0])
 
                 if args.gui:
                     active_anchors = anchors.keys()
                     draw_grid(active_anchors)
+                    draw_heatmap(heatmap_data)
                     tag_px, tag_py = int(x * 100 + 50), int(600 - (y * 100 + 50))
                     pygame.draw.circle(screen, BLUE, (tag_px, tag_py), 5)
                     font = pygame.font.Font(None, 36)

@@ -52,6 +52,9 @@ class db():
 
         self.conn.commit()
 
+    def getHeatMapData(self):
+        sql="SELECT "
+
     def getNormValue(self,x,y):
         #get total count
         sql = "SELECT SUM(*) as count FROM positions;"
