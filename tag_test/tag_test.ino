@@ -64,30 +64,32 @@ void newRange()
 {
     int id = getAnchorIntId(DW1000Ranging.getDistantDevice()->getShortAddress());
     float range = DW1000Ranging.getDistantDevice()->getRange();
-    anchorsdistances[id - 1] = range;
-    Serial.print("from: ");
-    Serial.print(id);
-    Serial.print("\t Range: ");
-    Serial.print(DW1000Ranging.getDistantDevice()->getRange());
-    Serial.println(" m");
+    if (range>0.0){
+      anchorsdistances[id - 1] = range;
+      Serial.print("from: ");
+      Serial.print(id);
+      Serial.print("\t Range: ");
+      Serial.print(DW1000Ranging.getDistantDevice()->getRange());
+      Serial.println(" m");
 
-    // Get all active anchors distances and put them together in a single call
-    char message[512];
-    snprintf(message, sizeof(message), "{'tagid':'%s','anchors':{", tagid);
+      // Get all active anchors distances and put them together in a single call
+      char message[512];
+      snprintf(message, sizeof(message), "{'tagid':'%s','anchors':{", tagid);
 
-    char temp[50];
-    for (int i = 0; i < 10; i++) {
-        float val = anchorsdistances[i];
-        if (val > 0.0) {
-            snprintf(temp, sizeof(temp), "'%d':%.2f,", i + 1, val);
-            strncat(message, temp, sizeof(message) - strlen(message) - 1);
-        }
+      char temp[50];
+      for (int i = 0; i < 10; i++) {
+          float val = anchorsdistances[i];
+          if (val > 0.0) {
+              snprintf(temp, sizeof(temp), "'%d':%.2f,", i + 1, val);
+              strncat(message, temp, sizeof(message) - strlen(message) - 1);
+          }
+      }
+
+      removeLastChar(message); // Remove last comma
+      strncat(message, "}}", sizeof(message) - strlen(message) - 1);
+
+      sendMessage(message);
     }
-
-    removeLastChar(message); // Remove last comma
-    strncat(message, "}}", sizeof(message) - strlen(message) - 1);
-
-    sendMessage(message);
 }
 
 void newDevice(DW1000Device *device) {
