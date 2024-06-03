@@ -1,7 +1,10 @@
 #include <SPI.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include <Arduino.h>
+#include "driver/dac.h"
 #include "DW1000Ranging.h"
+
 
 #define SPI_SCK 18
 #define SPI_MISO 19
@@ -24,6 +27,11 @@ float anchorsdistances[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
 WiFiUDP udp;
 char incomingPacket[255];  // Buffer for incoming packets
+
+// Task handle for the sound task
+TaskHandle_t soundTaskHandle;
+
+volatile float delayamount=5000;
 
 void setup()
 {
@@ -53,11 +61,23 @@ void setup()
     Serial.print("ESP32 IP Address: ");
     Serial.println(WiFi.localIP());
     udp.begin(port);  // Start UDP
+    dac_output_enable(DAC_CHANNEL_1); // Enable DAC channel (GPIO25 or GPIO26)
+
+    // Create the sound task
+  xTaskCreate(
+    soundTask,          // Task function
+    "Sound Task",       // Name of the task
+    1000,               // Stack size (in words)
+    NULL,               // Task input parameter
+    1,                  // Priority of the task
+    &soundTaskHandle    // Task handle
+  );
 }
 
 void loop()
 {
     DW1000Ranging.loop();
+    recieveMessage();
 }
 
 void newRange()
@@ -66,11 +86,11 @@ void newRange()
     float range = DW1000Ranging.getDistantDevice()->getRange();
     if (range>0.0){
       anchorsdistances[id - 1] = range;
-      Serial.print("from: ");
-      Serial.print(id);
-      Serial.print("\t Range: ");
-      Serial.print(DW1000Ranging.getDistantDevice()->getRange());
-      Serial.println(" m");
+      //Serial.print("from: ");
+      //Serial.print(id);
+      //Serial.print("\t Range: ");
+      //Serial.print(DW1000Ranging.getDistantDevice()->getRange());
+      //Serial.println(" m");
 
       // Get all active anchors distances and put them together in a single call
       char message[512];
@@ -118,6 +138,53 @@ void sendMessage(const char *message) {
     udp.endPacket();
 }
 
+void recieveMessage(){
+  //recieve
+  int packetSize = udp.parsePacket();
+  if (packetSize) {
+    // Receive incoming UDP packets
+    int len = udp.read(incomingPacket, 255);
+    if (len > 0) {
+      incomingPacket[len] = 0;
+    }
+    //Serial.printf("Received packet of size %d from %s:%d\n", packetSize, udp.remoteIP().toString().c_str(), udp.remotePort());
+    //Serial.printf("Packet contents: %s\n", incomingPacket);
+
+    // Convert incoming packet to float if the expected size is received
+    if (packetSize == sizeof(float)) {
+      float receivedValue;
+      memcpy(&receivedValue, incomingPacket, sizeof(receivedValue));
+      //Serial.printf("Received float: %f\n", receivedValue);
+      //float receivedValue_inverted=(1.0-receivedValue);
+      //delayamount=(1.0-receivedValue)*1000.0;
+      delayamount= mapFloat(receivedValue, 0.0, 0.8, 3000.0, 20.0);  // Map from range 0-100 to range 0-255
+      Serial.print("recievedvalue: ");
+      Serial.print(receivedValue);
+      Serial.printf(" - delay amount: %f\n", delayamount);
+      /*
+      //make the speaker sound
+      // Maximize the DAC output
+      for (int i = 0; i < 255; i++) {
+        dac_output_voltage(DAC_CHANNEL_1, 255); // Use maximum voltage for the pulse
+        delayMicroseconds(2); // Short burst
+      }
+      for (int i = 255; i >= 0; i--) {
+        dac_output_voltage(DAC_CHANNEL_1, 0); // Drop to zero quickly
+        delayMicroseconds(2); // Short burst
+      }
+      int delayamount=receivedValue*10000.0;
+      Serial.print("delayamount: ");
+      Serial.println(delayamount);
+      delay(delayamount);
+      //delay(random(100, 1000)); // Random delay between clicks
+      //ledspeed=receivedValue*1000;
+      */
+    } else {
+      Serial.println("Received packet is not a float.");
+    }
+  }
+}
+
 int getAnchorIntId(uint16_t shortAddress) {
     // Convert the uint16_t to a string
     char shortAddressStr[5]; // Maximum 4 digits + null terminator
@@ -137,4 +204,40 @@ int getAnchorIntId(uint16_t shortAddress) {
 
     // Return the result
     return value;
+}
+
+// Function to generate the tone
+void soundTask(void * parameter) {
+  while (true) {
+    for (int i = 0; i < 255; i++) {
+      dac_output_voltage(DAC_CHANNEL_1, 255); // Use maximum voltage for the pulse
+      //digitalWrite(speakerPin, HIGH);
+      delayMicroseconds(2);
+    }
+    for (int i = 255; i >= 0; i--) {
+      dac_output_voltage(DAC_CHANNEL_1, 0); // Use maximum voltage for the pulse
+      //digitalWrite(speakerPin, LOW);
+      delayMicroseconds(2);
+    }
+
+   
+    //Serial.print("delayamount: ");
+    //Serial.println(delayamount);
+    delay(delayamount);
+  }
+}
+
+
+float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
+  float result = (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+/*
+  // Ensure the result is within the bounds
+  if (result < out_min) {
+    result = out_min;
+  }
+  if (result > out_max) {
+    result = out_max;
+  }
+*/
+  return result;
 }

@@ -30,7 +30,12 @@ class db():
         self.cursor.execute(sql)
         result = self.cursor.fetchone()
         local=result["count"]
+        print("total",total,"local",local)
+        if total==0 or local==0:
+            return 0.0
+
+        
         norm=(local/total)
-        #print("total",total,"local",local)
+        
        
         return norm

@@ -35,9 +35,9 @@ send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 anchor_positions = {
     "1": (0, 0),
-    #"2": (5, 0),
+    "2": (5, 0),
     "3": (0, 3),
-    #"4": (5, 3)
+    "4": (5, 3)
     # Add more anchors as needed
 }
 
@@ -114,9 +114,14 @@ try:
                 print(f"Position: X={x:.2f}, Y={y:.2f}")
                 
                 #save to db
+                if x==0 or y==0:
+                    pass
+                else:
+                    DB.insertPos(tagid,x,y)
                 norm=DB.getNormValue(x,y)
 
                 response_message = norm
+                print("response msg",response_message) 
                 send_message_to_esp32(response_message,addr[0])
 
                 if args.gui:

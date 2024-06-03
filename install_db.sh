@@ -18,7 +18,7 @@ install_mariadb_fedora() {
 # Function to setup the database, user and table
 setup_database() {
     sudo mysql -e "CREATE DATABASE IF NOT EXISTS ghostwalks;"
-    sudo mysql -e "CREATE USER IF NOT EXISTS 'ghost'@'localhost' IDENTIFIED WITH mysql_native_password BY 'walks';"
+    sudo mysql -e "CREATE USER 'ghost'@'localhost' IDENTIFIED BY 'walks';"
     sudo mysql -e "GRANT ALL PRIVILEGES ON ghostwalks.* TO 'ghost'@'localhost';"
     sudo mysql -e "FLUSH PRIVILEGES;"
     sudo mysql -e "USE ghostwalks; CREATE TABLE IF NOT EXISTS positions (id INT AUTO_INCREMENT PRIMARY KEY, x FLOAT, y FLOAT,tagname VARCHAR(30), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"
