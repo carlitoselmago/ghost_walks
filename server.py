@@ -4,6 +4,7 @@ import json
 import struct
 import numpy as np
 import argparse
+from dbclient import db
 
 # Configuration
 LISTEN_UDP_IP = "0.0.0.0"  # Listen on all available network interfaces
@@ -23,6 +24,8 @@ if args.gui:
     screen = pygame.display.set_mode((800, 600))
     pygame.display.set_caption("UWB Positioning System")
 
+DB=db()
+
 # Create UDP sockets
 listen_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 listen_sock.bind((LISTEN_UDP_IP, LISTEN_UDP_PORT))
@@ -32,9 +35,9 @@ send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 anchor_positions = {
     "1": (0, 0),
-    "2": (5, 0),
+    #"2": (5, 0),
     "3": (0, 3),
-    "4": (5, 3)
+    #"4": (5, 3)
     # Add more anchors as needed
 }
 
@@ -73,6 +76,16 @@ def calculate_position(data, anchor_positions):
     
     return pos[0][0], pos[1][0]
 
+def send_message_to_esp32(message,address):
+    try:
+        message_bytes = struct.pack('f', message) if isinstance(message, float) else str(message).encode('utf-8')
+        send_sock.sendto(message_bytes, (address, SEND_UDP_PORT))
+        print(f"Sent message: {message} to {address}:{SEND_UDP_PORT}")
+    except PermissionError as e:
+        print(f"PermissionError: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
 def draw_grid(active_anchors):
     screen.fill(WHITE)
     for anchor_id, (ax_pos, ay_pos) in anchor_positions.items():
@@ -99,6 +112,12 @@ try:
                 tagid = msg["tagid"]
                 x, y = calculate_position(msg, anchor_positions)
                 print(f"Position: X={x:.2f}, Y={y:.2f}")
+                
+                #save to db
+                norm=DB.getNormValue(x,y)
+
+                response_message = norm
+                send_message_to_esp32(response_message,addr[0])
 
                 if args.gui:
                     active_anchors = anchors.keys()
