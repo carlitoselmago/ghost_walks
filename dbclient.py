@@ -15,18 +15,51 @@ class db():
         self.cursor=self.conn.cursor()
     
     def insertPos(self,tagid,x,y):
-        sql = "INSERT INTO `positions` (`tagname`, `x`,`y`) VALUES (%s, %s,%s)"
-        self.cursor.execute(sql,(tagid,x,y))
+        value=1
+        sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
+        self.cursor.execute(sql,(tagid,x,y,value))
+
+        #now apply a reduced value in a ring of positions to make it more gradual
+        rings=2
+
+        for r in range(rings):
+            d=(self.marginpos*r) #distance relative
+            u=value/(r+2)
+            #top left
+            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
+            self.cursor.execute(sql,(tagid,x-d,y+d,u))
+            #top
+            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
+            self.cursor.execute(sql,(tagid,x,y+d,u))
+            #top right
+            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
+            self.cursor.execute(sql,(tagid,x+d,y+d,u))
+            #right
+            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
+            self.cursor.execute(sql,(tagid,x+d,y,u))
+            #right bottom
+            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
+            self.cursor.execute(sql,(tagid,x+d,y-d,u))
+            #bottom
+            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
+            self.cursor.execute(sql,(tagid,x,y-d,u))
+            #bottom left
+            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
+            self.cursor.execute(sql,(tagid,x-d,y-d,u))
+            #left
+            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
+            self.cursor.execute(sql,(tagid,x-d,y-d,u))
+
         self.conn.commit()
 
     def getNormValue(self,x,y):
         #get total count
-        sql = "SELECT COUNT(*) as count FROM positions;"
+        sql = "SELECT SUM(*) as count FROM positions;"
         self.cursor.execute(sql)
         result = self.cursor.fetchone()
         total=result["count"]
         #get specific area count
-        sql = "SELECT COUNT(x) as count FROM positions WHERE x>"+str(x-self.marginpos)+" AND x<"+str(x+self.marginpos)+" AND y>"+str(y-self.marginpos)+" AND y<"+str(y+self.marginpos)+";"
+        sql = "SELECT SUM(x) as count FROM positions WHERE x>"+str(x-self.marginpos)+" AND x<"+str(x+self.marginpos)+" AND y>"+str(y-self.marginpos)+" AND y<"+str(y+self.marginpos)+";"
         self.cursor.execute(sql)
         result = self.cursor.fetchone()
         local=result["count"]

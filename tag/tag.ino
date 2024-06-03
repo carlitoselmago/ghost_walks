@@ -31,7 +31,7 @@ char incomingPacket[255];  // Buffer for incoming packets
 // Task handle for the sound task
 TaskHandle_t soundTaskHandle;
 
-volatile float delayamount=5000;
+volatile float presence=0;
 
 void setup()
 {
@@ -157,10 +157,11 @@ void recieveMessage(){
       //Serial.printf("Received float: %f\n", receivedValue);
       //float receivedValue_inverted=(1.0-receivedValue);
       //delayamount=(1.0-receivedValue)*1000.0;
-      delayamount= mapFloat(receivedValue, 0.0, 0.8, 3000.0, 20.0);  // Map from range 0-100 to range 0-255
+      //delayamount= mapFloat(receivedValue, 0.0, 0.8, 3000.0, 20.0);  // Map from range 0-100 to range 0-255
+      presence=receivedValue;
       Serial.print("recievedvalue: ");
-      Serial.print(receivedValue);
-      Serial.printf(" - delay amount: %f\n", delayamount);
+      Serial.println(receivedValue);
+      //Serial.printf(" - delay amount: %f\n", delayamount);
       /*
       //make the speaker sound
       // Maximize the DAC output
@@ -206,25 +207,24 @@ int getAnchorIntId(uint16_t shortAddress) {
     return value;
 }
 
-// Function to generate the tone
 void soundTask(void * parameter) {
-  while (true) {
-    for (int i = 0; i < 255; i++) {
-      dac_output_voltage(DAC_CHANNEL_1, 255); // Use maximum voltage for the pulse
-      //digitalWrite(speakerPin, HIGH);
-      delayMicroseconds(2);
-    }
-    for (int i = 255; i >= 0; i--) {
-      dac_output_voltage(DAC_CHANNEL_1, 0); // Use maximum voltage for the pulse
-      //digitalWrite(speakerPin, LOW);
-      delayMicroseconds(2);
-    }
+    //float presence = 0.1;  // Example presence value, you can change this dynamically in your code
 
-   
-    //Serial.print("delayamount: ");
-    //Serial.println(delayamount);
-    delay(delayamount);
-  }
+    while (true) {
+        if (presence > 0.2) {
+            // Generate a click sound
+            dac_output_voltage(DAC_CHANNEL_1, 255); // Set DAC to maximum voltage
+            delayMicroseconds(100); // Duration of the click
+            dac_output_voltage(DAC_CHANNEL_1, 0);   // Set DAC to zero voltage
+            delayMicroseconds(100); // Duration of the silence after click
+        }
+        
+        // Calculate the delay between clicks based on presence
+        int delayBetweenClicks = (1.0 - presence) * 1000; // Adjust this multiplier as needed
+        
+        // Wait for the calculated delay time
+        delay(delayBetweenClicks);
+    }
 }
 
 

@@ -21,7 +21,7 @@ setup_database() {
     sudo mysql -e "CREATE USER 'ghost'@'localhost' IDENTIFIED BY 'walks';"
     sudo mysql -e "GRANT ALL PRIVILEGES ON ghostwalks.* TO 'ghost'@'localhost';"
     sudo mysql -e "FLUSH PRIVILEGES;"
-    sudo mysql -e "USE ghostwalks; CREATE TABLE IF NOT EXISTS positions (id INT AUTO_INCREMENT PRIMARY KEY, x FLOAT, y FLOAT,tagname VARCHAR(30), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"
+    sudo mysql -e "USE ghostwalks; CREATE TABLE IF NOT EXISTS positions (id INT AUTO_INCREMENT PRIMARY KEY, x FLOAT, y FLOAT,amount FLOAT,tagname VARCHAR(30), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"
 }
 
 # Check for the distribution and install MariaDB accordingly
