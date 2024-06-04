@@ -35,9 +35,10 @@ send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 anchor_positions = {
     "1": (0, 0),
-    "2": (6.6, 0.6),
-    "3": (-1, 6),
-    "4": (8, 5.5)
+    "2": (4.6, 0.6),
+   # "3": (-1, 6),
+    #"4": (6, 5.5)
+    "3": (5, 3),
     # Add more anchors as needed
 }
 
@@ -123,6 +124,7 @@ try:
 
     while True:
         if args.gui:
+            pygame.event.pump()
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     raise KeyboardInterrupt
@@ -141,19 +143,19 @@ try:
                     x = -1.0
                     y = -1.0
 
-                if x > 0 and y > 0:
-                    print(f"Position: X={x:.2f}, Y={y:.2f}")
-                    
-                    # Save to db and update heatmap data
-                    if x != 0 and y != 0:
-                        DB.insertPos(tagid, x, y)
-                        coord = (round(x, 1), round(y, 1))  # rounding to the nearest 0.1 for heatmap purposes
-                        heatmap_data[coord] = heatmap_data.get(coord, 0) + 1
+                #if x > 0 and y > 0:
+                print(f"Position: X={x:.2f}, Y={y:.2f}")
+                
+                # Save to db and update heatmap data
+                if x != 0 and y != 0:
+                    DB.insertPos(tagid, x, y)
+                    coord = (round(x, 1), round(y, 1))  # rounding to the nearest 0.1 for heatmap purposes
+                    heatmap_data[coord] = heatmap_data.get(coord, 0) + 1
 
-                    norm = DB.getNormValue(x, y)
-                    response_message = norm
-                    #print("response msg", response_message) 
-                    send_message_to_esp32(response_message, addr[0])
+                norm = DB.getNormValue(x, y)
+                response_message = norm
+                #print("response msg", response_message) 
+                send_message_to_esp32(response_message, addr[0])
 
                 if args.gui:
                     active_anchors = anchors.keys()
