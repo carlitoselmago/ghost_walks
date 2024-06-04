@@ -17,9 +17,9 @@ const uint8_t PIN_IRQ = 34; // irq pin
 const uint8_t PIN_SS = 4;   // spi select pin
 
 const char tagid[] = "tag1";
-const char ssid[] = "( o )( o )";
-const char password[] = "todojuntoyenminusculas";
-const char host[] = "192.168.1.255";//"192.168.1.139";  // Set this to your computer's IP address
+const char ssid[] = "MANGO";
+const char password[] = "remotamente";
+const char host[] = "192.168.4.255";//"192.168.1.139";  // Set this to your computer's IP address
 const uint16_t port = 8888;
 
 bool connecteddevices[10] = {false, false, false, false, false, false, false, false, false, false};
@@ -31,7 +31,7 @@ char incomingPacket[255];  // Buffer for incoming packets
 // Task handle for the sound task
 TaskHandle_t soundTaskHandle;
 
-volatile float presence=0;
+volatile float presence=0.0;
 
 void setup()
 {
@@ -158,9 +158,9 @@ void recieveMessage(){
       //float receivedValue_inverted=(1.0-receivedValue);
       //delayamount=(1.0-receivedValue)*1000.0;
       //delayamount= mapFloat(receivedValue, 0.0, 0.8, 3000.0, 20.0);  // Map from range 0-100 to range 0-255
-      presence=receivedValue;
-      Serial.print("recievedvalue: ");
-      Serial.println(receivedValue);
+      presence=receivedValue*10;//*10000;
+      //Serial.print("recievedvalue: ");
+      //Serial.println(receivedValue);
       //Serial.printf(" - delay amount: %f\n", delayamount);
       /*
       //make the speaker sound
@@ -208,8 +208,8 @@ int getAnchorIntId(uint16_t shortAddress) {
 }
 
 void soundTask(void * parameter) {
-    //float presence = 0.1;  // Example presence value, you can change this dynamically in your code
-
+    //float presence = 0.8;  // Example presence value, you can change this dynamically in your code
+ 
     while (true) {
         if (presence > 0.2) {
             // Generate a click sound
@@ -221,9 +221,12 @@ void soundTask(void * parameter) {
         
         // Calculate the delay between clicks based on presence
         int delayBetweenClicks = (1.0 - presence) * 1000; // Adjust this multiplier as needed
-        
+        //Serial.print("delayBetweenClicks:");
+        //Serial.println(delayBetweenClicks);
         // Wait for the calculated delay time
         delay(delayBetweenClicks);
+        Serial.print("presence inside soundtask: ");
+        Serial.println(presence);
     }
 }
 

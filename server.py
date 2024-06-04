@@ -10,7 +10,7 @@ from dbclient import db
 LISTEN_UDP_IP = "0.0.0.0"  # Listen on all available network interfaces
 LISTEN_UDP_PORT = 8888     # Must match the port used by the ESP32
 
-SEND_UDP_IP = "192.168.1.255"  # Replace with the actual IP address of your ESP32
+SEND_UDP_IP = "192.168.4.255"  # Replace with the actual IP address of your ESP32
 SEND_UDP_PORT = 8888
 
 # Argument parser setup
@@ -35,9 +35,9 @@ send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 anchor_positions = {
     "1": (0, 0),
-    "2": (5, 0),
-    "3": (0, 3),
-    "4": (5, 3)
+    "2": (6.6, 0.6),
+    "3": (-1, 6),
+    "4": (8, 5.5)
     # Add more anchors as needed
 }
 
@@ -80,33 +80,47 @@ def send_message_to_esp32(message, address):
     try:
         message_bytes = struct.pack('f', message) if isinstance(message, float) else str(message).encode('utf-8')
         send_sock.sendto(message_bytes, (address, SEND_UDP_PORT))
-        print(f"Sent message: {message} to {address}:{SEND_UDP_PORT}")
+        #print(f"Sent message: {message} to {address}:{SEND_UDP_PORT}")
     except PermissionError as e:
         print(f"PermissionError: {e}")
     except Exception as e:
         print(f"An error occurred: {e}")
 
-def draw_grid(active_anchors):
+def get_fixed_scale_factors(anchor_positions, canvas_size=(800, 600), padding=50):
+    min_x = min(anchor_positions.values(), key=lambda pos: pos[0])[0]
+    min_y = min(anchor_positions.values(), key=lambda pos: pos[1])[1]
+    max_x = max(anchor_positions.values(), key=lambda pos: pos[0])[0]
+    max_y = max(anchor_positions.values(), key=lambda pos: pos[1])[1]
+
+    scale_x = (canvas_size[0] - 2 * padding) / (max_x - min_x)
+    scale_y = (canvas_size[1] - 2 * padding) / (max_y - min_y)
+    
+    return min(scale_x, scale_y), min_x, min_y
+
+def draw_grid(active_anchors, scale, min_x, min_y):
     screen.fill(WHITE)
     for anchor_id, (ax_pos, ay_pos) in anchor_positions.items():
-        px_pos, py_pos = int(ax_pos * 100 + 50), int(600 - (ay_pos * 100 + 50))
+        px_pos = int((ax_pos - min_x) * scale + 50)
+        py_pos = int(600 - ((ay_pos - min_y) * scale + 50))
         color = RED if anchor_id in active_anchors else GREY
         pygame.draw.circle(screen, color, (px_pos, py_pos), 5)
         font = pygame.font.Font(None, 36)
         text = font.render(f"A{anchor_id}", True, BLACK)
         screen.blit(text, (px_pos - 15, py_pos - 25))
 
-def draw_heatmap(heatmap_data):
+def draw_heatmap(heatmap_data, scale, min_x, min_y):
     max_visits = max(heatmap_data.values(), default=1)
     for (x, y), visits in heatmap_data.items():
         intensity = int((visits / max_visits) * 255)
         color = (255, 255 - intensity, 255 - intensity)
-        px_pos, py_pos = int(x * 100 + 50), int(600 - (y * 100 + 50))
+        px_pos = int((x - min_x) * scale + 50)
+        py_pos = int(600 - ((y - min_y) * scale + 50))
         pygame.draw.circle(screen, color, (px_pos, py_pos), 10)
 
 try:
     heatmap_data = {}
-    
+    scale, min_x, min_y = get_fixed_scale_factors(anchor_positions)
+
     while True:
         if args.gui:
             for event in pygame.event.get():
@@ -120,26 +134,36 @@ try:
 
                 anchors = msg["anchors"]
                 tagid = msg["tagid"]
-                x, y = calculate_position(msg, anchor_positions)
-                print(f"Position: X={x:.2f}, Y={y:.2f}")
-                
-                # Save to db and update heatmap data
-                if x != 0 and y != 0:
-                    DB.insertPos(tagid, x, y)
-                    coord = (round(x, 1), round(y, 1))  # rounding to the nearest 0.1 for heatmap purposes
-                    heatmap_data[coord] = heatmap_data.get(coord, 0) + 1
+                try:
+                    x, y = calculate_position(msg, anchor_positions)
+                except Exception as e:
+                    print("couldn't calculate position:", e)
+                    x = -1.0
+                    y = -1.0
 
-                norm = DB.getNormValue(x, y)
-                response_message = norm
-                print("response msg", response_message) 
-                send_message_to_esp32(response_message, addr[0])
+                if x > 0 and y > 0:
+                    print(f"Position: X={x:.2f}, Y={y:.2f}")
+                    
+                    # Save to db and update heatmap data
+                    if x != 0 and y != 0:
+                        DB.insertPos(tagid, x, y)
+                        coord = (round(x, 1), round(y, 1))  # rounding to the nearest 0.1 for heatmap purposes
+                        heatmap_data[coord] = heatmap_data.get(coord, 0) + 1
+
+                    norm = DB.getNormValue(x, y)
+                    response_message = norm
+                    #print("response msg", response_message) 
+                    send_message_to_esp32(response_message, addr[0])
 
                 if args.gui:
                     active_anchors = anchors.keys()
-                    draw_grid(active_anchors)
-                    draw_heatmap(heatmap_data)
-                    tag_px, tag_py = int(x * 100 + 50), int(600 - (y * 100 + 50))
+                    draw_grid(active_anchors, scale, min_x, min_y)
+                    #draw_heatmap(heatmap_data, scale, min_x, min_y)
+
+                    tag_px = int((x - min_x) * scale + 50)
+                    tag_py = int(600 - ((y - min_y) * scale + 50))
                     pygame.draw.circle(screen, BLUE, (tag_px, tag_py), 5)
+
                     font = pygame.font.Font(None, 36)
                     text = font.render("Tag", True, BLACK)
                     screen.blit(text, (tag_px + 10, tag_py - 15))

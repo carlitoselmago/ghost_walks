@@ -57,16 +57,21 @@ class db():
 
     def getNormValue(self,x,y):
         #get total count
-        sql = "SELECT SUM(*) as count FROM positions;"
+        sql = "SELECT SUM(amount) as count FROM positions;"
         self.cursor.execute(sql)
         result = self.cursor.fetchone()
         total=result["count"]
         #get specific area count
-        sql = "SELECT SUM(x) as count FROM positions WHERE x>"+str(x-self.marginpos)+" AND x<"+str(x+self.marginpos)+" AND y>"+str(y-self.marginpos)+" AND y<"+str(y+self.marginpos)+";"
+        sql = "SELECT SUM(amount) as count FROM positions WHERE x>"+str(x-self.marginpos)+" AND x<"+str(x+self.marginpos)+" AND y>"+str(y-self.marginpos)+" AND y<"+str(y+self.marginpos)+";"
         self.cursor.execute(sql)
         result = self.cursor.fetchone()
-        local=result["count"]
-        print("total",total,"local",local)
+        if result:
+            #print("result",result)
+            local=result["count"]
+        else:
+            local=0.0
+
+        #print("total",total,"local",local)
         if total==0 or local==0:
             return 0.0
 
