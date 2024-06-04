@@ -36,9 +36,9 @@ send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 anchor_positions = {
     "1": (0, 0),
     "2": (4.6, 0.6),
-   # "3": (-1, 6),
-    #"4": (6, 5.5)
-    "3": (5, 3),
+    "3": (-1, 6),
+    "4": (6, 5.5)
+    #"3": (5, 3),
     # Add more anchors as needed
 }
 
@@ -119,7 +119,7 @@ def draw_heatmap(heatmap_data, scale, min_x, min_y):
         pygame.draw.circle(screen, color, (px_pos, py_pos), 10)
 
 try:
-    heatmap_data = {}
+    #heatmap_data = {}
     scale, min_x, min_y = get_fixed_scale_factors(anchor_positions)
 
     while True:
@@ -134,23 +134,30 @@ try:
                 data, addr = listen_sock.recvfrom(1024)  # Buffer size is 1024 bytes
                 msg = json.loads(data.decode('utf-8').replace("'", "\""))
 
-                anchors = msg["anchors"]
+                print(msg)
+                #sys.exit()
+
+                #anchors = msg["anchors"]
                 tagid = msg["tagid"]
+                """
                 try:
                     x, y = calculate_position(msg, anchor_positions)
                 except Exception as e:
                     print("couldn't calculate position:", e)
                     x = -1.0
                     y = -1.0
-
+                """
+                x=msg["x"]
+                y=msg["y"]
                 #if x > 0 and y > 0:
                 print(f"Position: X={x:.2f}, Y={y:.2f}")
                 
                 # Save to db and update heatmap data
+                
                 if x != 0 and y != 0:
                     DB.insertPos(tagid, x, y)
                     coord = (round(x, 1), round(y, 1))  # rounding to the nearest 0.1 for heatmap purposes
-                    heatmap_data[coord] = heatmap_data.get(coord, 0) + 1
+                    #heatmap_data[coord] = heatmap_data.get(coord, 0) + 1
 
                 norm = DB.getNormValue(x, y)
                 response_message = norm
@@ -158,7 +165,7 @@ try:
                 send_message_to_esp32(response_message, addr[0])
 
                 if args.gui:
-                    active_anchors = anchors.keys()
+                    active_anchors = anchor_positions.keys()#anchors.keys()
                     draw_grid(active_anchors, scale, min_x, min_y)
                     #draw_heatmap(heatmap_data, scale, min_x, min_y)
 
@@ -175,7 +182,7 @@ try:
         except BlockingIOError:
             pass  # No data available, continue loop
         
-        time.sleep(0.01)  # Slightly delay the loop to avoid 100% CPU usage
+        #time.sleep(0.01)  # Slightly delay the loop to avoid 100% CPU usage
 
 except KeyboardInterrupt:
     print("\nServer stopped")

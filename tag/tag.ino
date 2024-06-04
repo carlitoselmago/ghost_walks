@@ -1,15 +1,26 @@
+// currently tag is module #5
+// this version is 2D (X,Y) only, 4 or more anchors (overdetermined linear least square solution)
+// The Z coordinates of anchors and tag are all assumed to be zero, so for highest accuracy
+// the anchors should be approximately in the same horizontal plane as the tag.
+// S. James Remington 1/2022
+
+// This code does not average position measurements!
+
 #include <SPI.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
-#include <Arduino.h>
-#include "driver/dac.h"
 #include "DW1000Ranging.h"
+#include "DW1000.h"
 
+//#define DEBUG_TRILAT  //prints in trilateration code
+//#define DEBUG_DIST     //print anchor distances
 
 #define SPI_SCK 18
 #define SPI_MISO 19
 #define SPI_MOSI 23
 #define DW_CS 4
+
+
 
 // connection pins
 const uint8_t PIN_RST = 27; // reset pin
@@ -22,35 +33,51 @@ const char password[] = "remotamente";
 const char host[] = "192.168.4.255";//"192.168.1.139";  // Set this to your computer's IP address
 const uint16_t port = 8888;
 
-bool connecteddevices[10] = {false, false, false, false, false, false, false, false, false, false};
-float anchorsdistances[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+// TAG antenna delay defaults to 16384
+// leftmost two bytes below will become the "short address"
+char tag_addr[] = "7D:00:22:EA:82:60:3B:9C";
+
+// variables for position determination
+#define N_ANCHORS 4
+#define ANCHOR_DISTANCE_EXPIRED 5000   //measurements older than this are ignore (milliseconds) 
+
+// global variables, input and output 
+
+float anchor_matrix[N_ANCHORS][3] = { //list of anchor coordinates, relative to chosen origin.
+  {0.0, 0.0, 2.00},  //Anchor labeled #1
+  {4.6, 0.3, 1.74},//Anchor labeled #2
+  {-1.0, 6.4, 2.1}, //Anchor labeled #3
+  { 6.0, 5.5, 2.25} //Anchor labeled #4
+};  //Z values are ignored in this code, except to compute RMS distance error
+
+uint32_t last_anchor_update[N_ANCHORS] = {0}; //millis() value last time anchor was seen
+float last_anchor_distance[N_ANCHORS] = {0.0}; //most recent distance reports
+
+float current_tag_position[2] = {0.0, 0.0}; //global current position (meters with respect to anchor origin)
+float current_distance_rmse = 0.0;  //rms error in distance calc => crude measure of position error (meters).  Needs to be better characterized
 
 WiFiUDP udp;
 char incomingPacket[255];  // Buffer for incoming packets
 
-// Task handle for the sound task
-TaskHandle_t soundTaskHandle;
-
-volatile float presence=0.0;
-
 void setup()
 {
-    Serial.begin(115200);
-    delay(1000);
-    //init the configuration
-    SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
-    DW1000Ranging.initCommunication(PIN_RST, PIN_SS, PIN_IRQ); //Reset, CS, IRQ pin
-    //define the sketch as anchor. It will be great to dynamically change the type of module
-    DW1000Ranging.attachNewRange(newRange);
-    DW1000Ranging.attachNewDevice(newDevice);
-    DW1000Ranging.attachInactiveDevice(inactiveDevice);
-    //Enable the filter to smooth the distance
-    DW1000Ranging.useRangeFilter(true);
+  Serial.begin(115200);
+  delay(1000);
 
-    //we start the module as a tag
-    DW1000Ranging.startAsTag("01:00:22:EA:82:60:3B:9C", DW1000.MODE_LONGDATA_RANGE_LOWPOWER); // add to the first number 01, 02, 03
+  //initialize configuration
+  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+  DW1000Ranging.initCommunication(PIN_RST, PIN_SS, PIN_IRQ); //Reset, CS, IRQ pin
 
-    WiFi.begin(ssid, password);
+  DW1000Ranging.attachNewRange(newRange);
+  DW1000Ranging.attachNewDevice(newDevice);
+  DW1000Ranging.attachInactiveDevice(inactiveDevice);
+
+  // start as tag, do not assign random short address
+
+  DW1000Ranging.startAsTag(tag_addr, DW1000.MODE_LONGDATA_RANGE_LOWPOWER, false);
+
+  WiFi.begin(ssid, password);
 
     while (WiFi.status() != WL_CONNECTED) {
         delay(1000);
@@ -61,186 +88,193 @@ void setup()
     Serial.print("ESP32 IP Address: ");
     Serial.println(WiFi.localIP());
     udp.begin(port);  // Start UDP
-    dac_output_enable(DAC_CHANNEL_1); // Enable DAC channel (GPIO25 or GPIO26)
-
-    // Create the sound task
-  xTaskCreate(
-    soundTask,          // Task function
-    "Sound Task",       // Name of the task
-    1000,               // Stack size (in words)
-    NULL,               // Task input parameter
-    1,                  // Priority of the task
-    &soundTaskHandle    // Task handle
-  );
 }
 
 void loop()
 {
-    DW1000Ranging.loop();
-    recieveMessage();
+  DW1000Ranging.loop();
 }
+
+// collect distance data from anchors, presently configured for 4 anchors
+// solve for position if all four current
 
 void newRange()
 {
-    int id = getAnchorIntId(DW1000Ranging.getDistantDevice()->getShortAddress());
+  int i;  //index of this anchor, expecting values 1 to 7
+  int index = DW1000Ranging.getDistantDevice()->getShortAddress() & 0x07;
+  
+  if (index > 0) {
+    last_anchor_update[index - 1] = millis();  //decrement index for array index
     float range = DW1000Ranging.getDistantDevice()->getRange();
-    if (range>0.0){
-      anchorsdistances[id - 1] = range;
-      //Serial.print("from: ");
-      //Serial.print(id);
-      //Serial.print("\t Range: ");
-      //Serial.print(DW1000Ranging.getDistantDevice()->getRange());
-      //Serial.println(" m");
+    last_anchor_distance[index - 1] = range;
+    if (range < 0.0 || range > 30.0)     last_anchor_update[index - 1] = 0;  //error or out of bounds, ignore this measurement
+  }
 
-      // Get all active anchors distances and put them together in a single call
-      char message[512];
-      snprintf(message, sizeof(message), "{'tagid':'%s','anchors':{", tagid);
+  int detected = 0;
 
-      char temp[50];
-      for (int i = 0; i < 10; i++) {
-          float val = anchorsdistances[i];
-          if (val > 0.0) {
-              snprintf(temp, sizeof(temp), "'%d':%.2f,", i + 1, val);
-              strncat(message, temp, sizeof(message) - strlen(message) - 1);
-          }
+  //reject old measurements
+  for (i = 0; i < N_ANCHORS; i++) {
+    if (millis() - last_anchor_update[i] > ANCHOR_DISTANCE_EXPIRED) last_anchor_update[i] = 0; //not from this one
+    if (last_anchor_update[i] > 0) detected++;
+  }
+
+#ifdef DEBUG_DIST
+    // print distance and age of measurement
+    uint32_t current_time = millis();
+    for (i = 0; i < N_ANCHORS; i++) {
+      Serial.print(i+1); //ID
+      Serial.print("> ");
+      Serial.print(last_anchor_distance[i]);
+      Serial.print("\t");
+      Serial.println(current_time - last_anchor_update[i]); //age in millis
+    }
+#endif
+
+  if ( detected == 4) { //four measurements minimum
+
+    trilat2D_4A();
+
+    
+
+    //output the values (X, Y and error estimate)
+    Serial.print("P= ");
+    Serial.print(current_tag_position[0]);
+    Serial.write(',');
+    Serial.print(current_tag_position[1]);
+    Serial.write(',');
+    Serial.print("error:");
+    Serial.println(current_distance_rmse);
+
+    char message[128];
+    snprintf(message, sizeof(message), "{'tagid':'%s','x':%.2f,'y':%.2f,'error':%.2f}", tagid, current_tag_position[0], current_tag_position[1], current_distance_rmse);
+
+    sendMessage(message);
+  }
+}  //end newRange
+
+void newDevice(DW1000Device *device)
+{
+  Serial.print("Device added: ");
+  Serial.println(device->getShortAddress(), HEX);
+}
+
+void inactiveDevice(DW1000Device *device)
+{
+  Serial.print("delete inactive device: ");
+  Serial.println(device->getShortAddress(), HEX);
+}
+
+int trilat2D_4A(void) {
+
+  // for method see technical paper at
+  // https://www.th-luebeck.de/fileadmin/media_cosa/Dateien/Veroeffentlichungen/Sammlung/TR-2-2015-least-sqaures-with-ToA.pdf
+  // S. James Remington 1/2022
+  //
+  // A nice feature of this method is that the normal matrix depends only on the anchor arrangement
+  // and needs to be inverted only once. Hence, the position calculation should be robust.
+  //
+  static bool first = true;  //first time through, some preliminary work
+  float d[N_ANCHORS]; //temp vector, distances from anchors
+
+  static float A[N_ANCHORS - 1][2], Ainv[2][2], b[N_ANCHORS - 1], kv[N_ANCHORS]; //calculated in first call, used in later calls
+
+  int i, j, k;
+  // copy distances to local storage
+  for (i = 0; i < N_ANCHORS; i++) d[i] = last_anchor_distance[i];
+
+#ifdef DEBUG_TRILAT
+  char line[60];
+  snprintf(line, sizeof line, "d: %6.2f %6.2f %6.2f", d[0], d[1], d[2]);
+  Serial.println(line);
+#endif
+
+  if (first) {  //intermediate fixed vectors
+    first = false;
+
+    float x[N_ANCHORS], y[N_ANCHORS]; //intermediate vectors
+
+    for (i = 0; i < N_ANCHORS; i++) {
+      x[i] = anchor_matrix[i][0];
+      y[i] = anchor_matrix[i][1];
+      kv[i] = x[i] * x[i] + y[i] * y[i];
+    }
+
+    // set up least squares equation
+
+    for (i = 1; i < N_ANCHORS; i++) {
+      A[i - 1][0] = x[i] - x[0];
+      A[i - 1][1] = y[i] - y[0];
+#ifdef DEBUG_TRILAT
+      snprintf(line, sizeof line, "A  %5.2f %5.2f", A[i - 1][0], A[i - 1][1]);
+      Serial.println(line);
+#endif
+    }
+    float ATA[2][2];  //calculate A transpose A
+    // Cij = sum(k) (Aki*Akj)
+    for (i = 0; i < 2; i++) {
+      for (j = 0; j < 2; j++) {
+        ATA[i][j] = 0.0;
+        for (k = 0; k < N_ANCHORS - 1; k++) ATA[i][j] += A[k][i] * A[k][j];
       }
-
-      removeLastChar(message); // Remove last comma
-      strncat(message, "}}", sizeof(message) - strlen(message) - 1);
-
-      sendMessage(message);
     }
-}
+#ifdef DEBUG_TRILAT
+    snprintf(line, sizeof line, "ATA %5.2f %5.2f\n    %5.2f %5.2f", ATA[0][0], ATA[0][1], ATA[1][0], ATA[1][1]);
+    Serial.println(line);
+#endif
 
-void newDevice(DW1000Device *device) {
-    int id = getAnchorIntId(device->getShortAddress());
-    Serial.print("NEW DEVICE CONNECTED: ");
-    Serial.println(id);
-}
-
-void inactiveDevice(DW1000Device *device) {
-    int id = getAnchorIntId(device->getShortAddress());
-    anchorsdistances[id - 1] = 0.0;
-    Serial.print("DEVICE DISCONNECTED: ");
-    Serial.println(id);
-}
-
-void removeLastChar(char *str) {
-    int length = strlen(str);
-    if (length > 0) {
-        str[length - 1] = '\0'; // Remove the last character
+    //invert ATA
+    float det = ATA[0][0] * ATA[1][1] - ATA[1][0] * ATA[0][1];
+    if (fabs(det) < 1.0E-4) {
+      Serial.println("***Singular matrix, check anchor coordinates***");
+      while (1) delay(1); //hang
     }
-}
+    det = 1.0 / det;
+    //scale adjoint
+    Ainv[0][0] =  det * ATA[1][1];
+    Ainv[0][1] = -det * ATA[0][1];
+    Ainv[1][0] = -det * ATA[1][0];
+    Ainv[1][1] =  det * ATA[0][0];
+#ifdef DEBUG_TRILAT
+    snprintf(line, sizeof line, "Ainv %7.4f %7.4f\n     %7.4f %7.4f", Ainv[0][0], Ainv[0][1], Ainv[1][0], Ainv[1][1]);
+    Serial.println(line);
+    snprintf(line, sizeof line, "det Ainv %8.3e", det);
+    Serial.println(line);
+#endif
+
+  } //end if (first);
+
+  //least squares solution for position
+  //solve:  (x,y) = 0.5*(Ainv AT b)
+
+  for (i = 1; i < N_ANCHORS; i++) {
+    b[i - 1] = d[0] * d[0] - d[i] * d[i] + kv[i] - kv[0];
+  }
+
+  float ATb[2] = {0.0}; //A transpose b
+  for (i = 0; i < N_ANCHORS - 1; i++) {
+    ATb[0] += A[i][0] * b[i];
+    ATb[1] += A[i][1] * b[i];
+  }
+
+  current_tag_position[0] = 0.5 * (Ainv[0][0] * ATb[0] + Ainv[0][1] * ATb[1]);
+  current_tag_position[1] = 0.5 * (Ainv[1][0] * ATb[0] + Ainv[1][1] * ATb[1]);
+
+  // calculate rms error for distances
+  float rmse = 0.0, dc0 = 0.0, dc1 = 0.0, dc2 = 0.0;
+  for (i = 0; i < N_ANCHORS; i++) {
+    dc0 = current_tag_position[0] - anchor_matrix[i][0];
+    dc1 = current_tag_position[1] - anchor_matrix[i][1];
+    dc2 = anchor_matrix[i][2]; //include known Z coordinate of anchor
+    dc0 = d[i] - sqrt(dc0 * dc0 + dc1 * dc1 + dc2 * dc2);
+    rmse += dc0 * dc0;
+  }
+  current_distance_rmse = sqrt(rmse / ((float)N_ANCHORS));
+
+  return 1;
+} 
 
 void sendMessage(const char *message) {
     udp.beginPacket(host, port);
-    udp.write((const uint8_t*)message, strlen(message));
+    udp.write((const uint8_t*)message, strlen(message));  // Ensure to send the whole buffer at once to avoid multiple calls
     udp.endPacket();
-}
-
-void recieveMessage(){
-  //recieve
-  int packetSize = udp.parsePacket();
-  if (packetSize) {
-    // Receive incoming UDP packets
-    int len = udp.read(incomingPacket, 255);
-    if (len > 0) {
-      incomingPacket[len] = 0;
-    }
-    //Serial.printf("Received packet of size %d from %s:%d\n", packetSize, udp.remoteIP().toString().c_str(), udp.remotePort());
-    //Serial.printf("Packet contents: %s\n", incomingPacket);
-
-    // Convert incoming packet to float if the expected size is received
-    if (packetSize == sizeof(float)) {
-      float receivedValue;
-      memcpy(&receivedValue, incomingPacket, sizeof(receivedValue));
-      //Serial.printf("Received float: %f\n", receivedValue);
-      //float receivedValue_inverted=(1.0-receivedValue);
-      //delayamount=(1.0-receivedValue)*1000.0;
-      //delayamount= mapFloat(receivedValue, 0.0, 0.8, 3000.0, 20.0);  // Map from range 0-100 to range 0-255
-      presence=receivedValue*10;//*10000;
-      //Serial.print("recievedvalue: ");
-      //Serial.println(receivedValue);
-      //Serial.printf(" - delay amount: %f\n", delayamount);
-      /*
-      //make the speaker sound
-      // Maximize the DAC output
-      for (int i = 0; i < 255; i++) {
-        dac_output_voltage(DAC_CHANNEL_1, 255); // Use maximum voltage for the pulse
-        delayMicroseconds(2); // Short burst
-      }
-      for (int i = 255; i >= 0; i--) {
-        dac_output_voltage(DAC_CHANNEL_1, 0); // Drop to zero quickly
-        delayMicroseconds(2); // Short burst
-      }
-      int delayamount=receivedValue*10000.0;
-      Serial.print("delayamount: ");
-      Serial.println(delayamount);
-      delay(delayamount);
-      //delay(random(100, 1000)); // Random delay between clicks
-      //ledspeed=receivedValue*1000;
-      */
-    } else {
-      Serial.println("Received packet is not a float.");
-    }
-  }
-}
-
-int getAnchorIntId(uint16_t shortAddress) {
-    // Convert the uint16_t to a string
-    char shortAddressStr[5]; // Maximum 4 digits + null terminator
-    snprintf(shortAddressStr, sizeof(shortAddressStr), "%04X", shortAddress);
-
-    // Get the last two characters of the string
-    char lastTwoChars[3]; // 2 chars + null terminator
-    lastTwoChars[0] = shortAddressStr[2];
-    lastTwoChars[1] = shortAddressStr[3];
-    lastTwoChars[2] = '\0';
-
-    // Convert the last two characters to an integer
-    int value = atoi(lastTwoChars);
-
-    // Subtract 80 from the value
-    value -= 80;
-
-    // Return the result
-    return value;
-}
-
-void soundTask(void * parameter) {
-    //float presence = 0.8;  // Example presence value, you can change this dynamically in your code
- 
-    while (true) {
-        if (presence > 0.2) {
-            // Generate a click sound
-            dac_output_voltage(DAC_CHANNEL_1, 255); // Set DAC to maximum voltage
-            delayMicroseconds(100); // Duration of the click
-            dac_output_voltage(DAC_CHANNEL_1, 0);   // Set DAC to zero voltage
-            delayMicroseconds(100); // Duration of the silence after click
-        }
-        
-        // Calculate the delay between clicks based on presence
-        int delayBetweenClicks = (1.0 - presence) * 1000; // Adjust this multiplier as needed
-        //Serial.print("delayBetweenClicks:");
-        //Serial.println(delayBetweenClicks);
-        // Wait for the calculated delay time
-        delay(delayBetweenClicks);
-        Serial.print("presence inside soundtask: ");
-        Serial.println(presence);
-    }
-}
-
-
-float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
-  float result = (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-/*
-  // Ensure the result is within the bounds
-  if (result < out_min) {
-    result = out_min;
-  }
-  if (result > out_max) {
-    result = out_max;
-  }
-*/
-  return result;
 }
