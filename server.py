@@ -10,6 +10,8 @@ from pythonosc import osc_server
 import threading
 import sys
 from scipy.optimize import minimize
+import csv
+import os
 
 # Configuration
 LISTEN_IP = "0.0.0.0"  # Listen on all available network interfaces
@@ -162,7 +164,25 @@ def osc_handler(addr, *msg):
     global ranges,x,y,rmse,max_error
     #messages by index anchor ranges
     
+
+    #### CSV for testing remove in live
+
+    # Define the CSV file path
+    csv_file = 'data.csv'
     
+    # Check if the CSV file exists, and create it with headers if it doesn't
+    if not os.path.isfile(csv_file):
+        with open(csv_file, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['Address'] + [f'Message_{i}' for i in range(len(msg))])
+    
+    # Append the new msg data to the CSV file
+    with open(csv_file, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([addr] + list(msg))
+
+    #### END CSV
+
     for i,r in enumerate(anchor_positions):
         newv=msg[i]
         if newv>0 and newv <maxdistance:
@@ -177,26 +197,7 @@ def osc_handler(addr, *msg):
     if rmse<max_error:
         x=position[0]
         y=position[1]
-    
 
-    """
-    global x, y,rmse
-    #messages by index: x,y,error
-    
-    #msg = json.loads(args[0])
-    #print(msg)
-
-    tagid =addr# msg["tagid"]
-    x = msg[0]#msg["x"]
-    y = msg[1]#msg["y"]
-    rmse=msg[2]
-    print(f"Position: X={x:.2f}, Y={y:.2f} , E:{rmse:.2f}")
-
-    if x != 0 and y != 0:
-        #DB.insertPos(tagid, x, y)
-        coord = (round(x, 1), round(y, 1))
-
-    """
     
 
 disp = dispatcher.Dispatcher()
