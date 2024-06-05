@@ -8,7 +8,8 @@
 
 #include <SPI.h>
 #include <WiFi.h>
-#include <WiFiUdp.h>
+//#include <WiFiUdp.h>
+#include <ArduinoOSCWiFi.h>
 #include "DW1000Ranging.h"
 #include "DW1000.h"
 
@@ -27,10 +28,10 @@ const uint8_t PIN_RST = 27; // reset pin
 const uint8_t PIN_IRQ = 34; // irq pin
 const uint8_t PIN_SS = 4;   // spi select pin
 
-const char tagid[] = "tag1";
+const char *tagid = "/tag1";
 const char ssid[] = "MANGO";
 const char password[] = "remotamente";
-const char host[] = "192.168.4.255";//"192.168.1.139";  // Set this to your computer's IP address
+const char host[] = "192.168.10.255";//"192.168.10.255";//"192.168.1.139";  // Set this to your computer's IP address
 const uint16_t port = 8888;
 
 
@@ -60,6 +61,10 @@ float current_distance_rmse = 0.0;  //rms error in distance calc => crude measur
 WiFiUDP udp;
 char incomingPacket[255];  // Buffer for incoming packets
 
+
+// Task handle for the sound task
+TaskHandle_t udpTaskHandle;
+
 void setup()
 {
   Serial.begin(115200);
@@ -88,6 +93,19 @@ void setup()
     Serial.print("ESP32 IP Address: ");
     Serial.println(WiFi.localIP());
     udp.begin(port);  // Start UDP
+
+  
+  // Create the udp task
+  xTaskCreate(
+    udpTask,          // Task function
+    "UDP Task",       // Name of the task
+    2000,               // Stack size (in words)
+    NULL,               // Task input parameter
+    1,                  // Priority of the task
+    &udpTaskHandle   // Task handle
+   // 0                 // core to run the task
+  );
+  
 }
 
 void loop()
@@ -106,6 +124,12 @@ void newRange()
   if (index > 0) {
     last_anchor_update[index - 1] = millis();  //decrement index for array index
     float range = DW1000Ranging.getDistantDevice()->getRange();
+    /*
+    Serial.print("range " );
+    Serial.print(range);
+    Serial.print(" power ");
+    Serial.println(DW1000Ranging.getDistantDevice()->getRXPower());
+    */
     last_anchor_distance[index - 1] = range;
     if (range < 0.0 || range > 30.0)     last_anchor_update[index - 1] = 0;  //error or out of bounds, ignore this measurement
   }
@@ -133,9 +157,6 @@ void newRange()
   if ( detected == 4) { //four measurements minimum
 
     trilat2D_4A();
-
-    
-
     //output the values (X, Y and error estimate)
     Serial.print("P= ");
     Serial.print(current_tag_position[0]);
@@ -145,10 +166,7 @@ void newRange()
     Serial.print("error:");
     Serial.println(current_distance_rmse);
 
-    char message[128];
-    snprintf(message, sizeof(message), "{'tagid':'%s','x':%.2f,'y':%.2f,'error':%.2f}", tagid, current_tag_position[0], current_tag_position[1], current_distance_rmse);
-
-    sendMessage(message);
+   
   }
 }  //end newRange
 
@@ -277,4 +295,17 @@ void sendMessage(const char *message) {
     udp.beginPacket(host, port);
     udp.write((const uint8_t*)message, strlen(message));  // Ensure to send the whole buffer at once to avoid multiple calls
     udp.endPacket();
+}
+
+void udpTask(void * parameter) {
+    while (true) {
+        //OscWiFi.update();
+        OscWiFi.send(host, port, tagid,current_tag_position[0], current_tag_position[1],current_distance_rmse);
+        //char message[128];
+        //snprintf(message, sizeof(message), "{'tagid':'%s','x':%.2f,'y':%.2f,'error':%.2f}", tagid, current_tag_position[0], current_tag_position[1], current_distance_rmse);
+        //Serial.println(message);
+        //char message[5]="hola";
+        //sendMessage(message);
+        delay(10);
+    }
 }

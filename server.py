@@ -5,13 +5,16 @@ import struct
 import numpy as np
 import argparse
 from dbclient import db
+from pythonosc import dispatcher
+from pythonosc import osc_server
+import threading
 
 # Configuration
-LISTEN_UDP_IP = "0.0.0.0"  # Listen on all available network interfaces
-LISTEN_UDP_PORT = 8888     # Must match the port used by the ESP32
+LISTEN_IP = "0.0.0.0"  # Listen on all available network interfaces
+LISTEN_PORT = 8888     # Must match the port used by the ESP32
 
-SEND_UDP_IP = "192.168.4.255"  # Replace with the actual IP address of your ESP32
-SEND_UDP_PORT = 8888
+SEND_IP = "192.168.4.255"  # Replace with the actual IP address of your ESP32
+SEND_PORT = 8888
 
 # Argument parser setup
 parser = argparse.ArgumentParser(description="UWB Positioning System")
@@ -26,12 +29,14 @@ if args.gui:
 
 DB = db()
 
+"""
 # Create UDP sockets
 listen_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 listen_sock.bind((LISTEN_UDP_IP, LISTEN_UDP_PORT))
 listen_sock.setblocking(False)  # Set to non-blocking mode
 
 send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+"""
 
 anchor_positions = {
     "1": (0, 0),
@@ -77,6 +82,7 @@ def calculate_position(data, anchor_positions):
     
     return pos[0][0], pos[1][0]
 
+"""
 def send_message_to_esp32(message, address):
     try:
         message_bytes = struct.pack('f', message) if isinstance(message, float) else str(message).encode('utf-8')
@@ -86,7 +92,7 @@ def send_message_to_esp32(message, address):
         print(f"PermissionError: {e}")
     except Exception as e:
         print(f"An error occurred: {e}")
-
+"""
 def get_fixed_scale_factors(anchor_positions, canvas_size=(800, 600), padding=50):
     min_x = min(anchor_positions.values(), key=lambda pos: pos[0])[0]
     min_y = min(anchor_positions.values(), key=lambda pos: pos[1])[1]
@@ -97,6 +103,24 @@ def get_fixed_scale_factors(anchor_positions, canvas_size=(800, 600), padding=50
     scale_y = (canvas_size[1] - 2 * padding) / (max_y - min_y)
     
     return min(scale_x, scale_y), min_x, min_y
+
+def draw_rmse_bar(screen, rmse):
+    bar_height = int((rmse / 5.0) * 500)  # Scale RMSE to bar height (max 500 pixels)
+    bar_width = 30
+    bar_x = 750  # Position on the right
+    bar_y = 50 + (500 - bar_height)  # Position the bar from the top
+
+    # Draw the bar background
+    pygame.draw.rect(screen, WHITE, (bar_x, 50, bar_width, 500))
+
+    # Draw the RMSE bar
+    pygame.draw.rect(screen, BLUE, (bar_x, bar_y, bar_width, bar_height))
+
+    # Draw the RMSE text
+    font = pygame.font.Font(None, 36)
+    text = font.render(f"RMSE: {rmse:.2f}", True, BLACK)
+    screen.blit(text, (bar_x - 100, 10))
+
 
 def draw_grid(active_anchors, scale, min_x, min_y):
     screen.fill(WHITE)
@@ -109,6 +133,9 @@ def draw_grid(active_anchors, scale, min_x, min_y):
         text = font.render(f"A{anchor_id}", True, BLACK)
         screen.blit(text, (px_pos - 15, py_pos - 25))
 
+    # Draw the RMSE bar
+    draw_rmse_bar(screen, rmse)
+
 def draw_heatmap(heatmap_data, scale, min_x, min_y):
     max_visits = max(heatmap_data.values(), default=1)
     for (x, y), visits in heatmap_data.items():
@@ -117,6 +144,80 @@ def draw_heatmap(heatmap_data, scale, min_x, min_y):
         px_pos = int((x - min_x) * scale + 50)
         py_pos = int(600 - ((y - min_y) * scale + 50))
         pygame.draw.circle(screen, color, (px_pos, py_pos), 10)
+
+x=0
+y=0
+rmse=0
+
+def osc_handler(addr, *msg):
+    global x, y,rmse
+    #messages by index: x,y,error
+    
+    #msg = json.loads(args[0])
+    #print(msg)
+
+    tagid =addr# msg["tagid"]
+    x = msg[0]#msg["x"]
+    y = msg[1]#msg["y"]
+    rmse=msg[2]
+    print(f"Position: X={x:.2f}, Y={y:.2f} , E:{rmse:.2f}")
+
+    if x != 0 and y != 0:
+        #DB.insertPos(tagid, x, y)
+        coord = (round(x, 1), round(y, 1))
+
+    
+    
+
+disp = dispatcher.Dispatcher()
+disp.map("/tag1", osc_handler)
+
+server = osc_server.ThreadingOSCUDPServer((LISTEN_IP, LISTEN_PORT), disp)
+server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server_thread = threading.Thread(target=server.serve_forever)
+server_thread.start()
+
+scale, min_x, min_y = get_fixed_scale_factors(anchor_positions)
+
+try:
+    while True:
+        if args.gui:
+            #pygame.event.pump()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    raise KeyboardInterrupt
+            
+            #norm = DB.getNormValue(x, y)
+            #response_message = norm
+            #send_message_to_esp32(response_message, addr[0])
+
+    
+            active_anchors = anchor_positions.keys()
+            draw_grid(active_anchors, scale, min_x, min_y)
+
+            tag_px = int((x - min_x) * scale + 50)
+            tag_py = int(600 - ((y - min_y) * scale + 50))
+            pygame.draw.circle(screen, BLUE, (tag_px, tag_py), 5)
+
+            font = pygame.font.Font(None, 36)
+            text = font.render("Tag", True, BLACK)
+            screen.blit(text, (tag_px + 10, tag_py - 15))
+
+            pygame.display.flip()
+
+            # You might add a small sleep here to prevent maxing out CPU usage
+            #time.sleep(0.01)
+
+except KeyboardInterrupt:
+    print("\nServer stopped")
+finally:
+    server.shutdown()
+    server.server_close()
+    if args.gui:
+        pygame.quit()
+
+
+"""
 
 try:
     #heatmap_data = {}
@@ -139,14 +240,14 @@ try:
 
                 #anchors = msg["anchors"]
                 tagid = msg["tagid"]
-                """
-                try:
-                    x, y = calculate_position(msg, anchor_positions)
-                except Exception as e:
-                    print("couldn't calculate position:", e)
-                    x = -1.0
-                    y = -1.0
-                """
+                
+                #try:
+                #    x, y = calculate_position(msg, anchor_positions)
+                #except Exception as e:
+                #    print("couldn't calculate position:", e)
+                #    x = -1.0
+                #    y = -1.0
+                
                 x=msg["x"]
                 y=msg["y"]
                 #if x > 0 and y > 0:
@@ -191,3 +292,5 @@ finally:
     send_sock.close()
     if args.gui:
         pygame.quit()
+
+"""
