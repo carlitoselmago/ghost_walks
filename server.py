@@ -8,6 +8,8 @@ from dbclient import db
 from pythonosc import dispatcher
 from pythonosc import osc_server
 import threading
+import sys
+from scipy.optimize import minimize
 
 # Configuration
 LISTEN_IP = "0.0.0.0"  # Listen on all available network interfaces
@@ -29,6 +31,8 @@ if args.gui:
 
 DB = db()
 
+
+
 """
 # Create UDP sockets
 listen_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -40,12 +44,18 @@ send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 anchor_positions = {
     "1": (0, 0),
-    "2": (4.6, 0.6),
+    "2": (5.6, 0.6),
     "3": (-1, 6),
-    "4": (6, 5.5)
-    #"3": (5, 3),
+    "4": (7, 5.5)
     # Add more anchors as needed
 }
+
+ranges=[]
+maxdistance=20 #distance which if greater will be rejected
+max_error=3 #if rmse is greater than this, the values won't be accepted
+
+for r,i in enumerate(anchor_positions):
+    ranges.append(0.0)
 
 # Colors
 WHITE = (255, 255, 255)
@@ -54,33 +64,32 @@ BLUE = (0, 0, 255)
 BLACK = (0, 0, 0)
 GREY = (192, 192, 192)
 
-def calculate_position(data, anchor_positions):
-    distances = data['anchors']
+def euclidean_distance(p1, p2):
+    return np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
+
+# Define the function to calculate the position
+def calculate_position(distances, anchor_positions):
+    # Extract anchor positions into a list
+    anchors = [anchor_positions[str(i+1)] for i in range(len(distances))]
     
-    A = []
-    B = []
+    # Initial guess for the tag position (could be improved)
+    initial_guess = (0, 0)
     
-    anchors = list(distances.keys())
+    # Define the error function
+    def error_function(tag_position):
+        return sum((euclidean_distance(tag_position, anchor) - dist)**2 for anchor, dist in zip(anchors, distances))
     
-    for i in range(1, len(anchors)):
-        anchor1_id = anchors[0]
-        anchor2_id = anchors[i]
-        
-        x1, y1 = anchor_positions[anchor1_id]
-        x2, y2 = anchor_positions[anchor2_id]
-        
-        d1 = distances[anchor1_id]
-        d2 = distances[anchor2_id]
-        
-        A.append([2 * (x2 - x1), 2 * (y2 - y1)])
-        B.append([d1**2 - d2**2 - x1**2 + x2**2 - y1**2 + y2**2])
+    # Use minimize function to find the best position
+    result = minimize(error_function, initial_guess, method='L-BFGS-B')
     
-    A = np.array(A)
-    B = np.array(B)
+    # Extract the optimal position
+    optimal_position = result.x
     
-    pos = np.linalg.lstsq(A, B, rcond=None)[0]
+    # Calculate the error percentage
+    total_error = error_function(optimal_position)
+    error_percentage = (total_error / sum(distances)) * 100
     
-    return pos[0][0], pos[1][0]
+    return optimal_position, error_percentage
 
 """
 def send_message_to_esp32(message, address):
@@ -150,6 +159,27 @@ y=0
 rmse=0
 
 def osc_handler(addr, *msg):
+    global ranges,x,y,rmse,max_error
+    #messages by index anchor ranges
+    
+    
+    for i,r in enumerate(anchor_positions):
+        newv=msg[i]
+        if newv>0 and newv <maxdistance:
+            #if abs(newv+ranges[i])<maxdistance:
+            ranges[i]=newv
+
+    #x, y = calculate_position(ranges,anchor_positions)
+    
+    position, error_percentage = calculate_position(ranges[0:len(anchor_positions)], anchor_positions)
+    print(position, error_percentage)
+    rmse=error_percentage/10
+    if rmse<max_error:
+        x=position[0]
+        y=position[1]
+    
+
+    """
     global x, y,rmse
     #messages by index: x,y,error
     
@@ -166,7 +196,7 @@ def osc_handler(addr, *msg):
         #DB.insertPos(tagid, x, y)
         coord = (round(x, 1), round(y, 1))
 
-    
+    """
     
 
 disp = dispatcher.Dispatcher()

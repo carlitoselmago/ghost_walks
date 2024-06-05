@@ -35,6 +35,8 @@ const char host[] = "192.168.10.255";//"192.168.10.255";//"192.168.1.139";  // S
 const uint16_t port = 8888;
 
 
+float ranges[10] ={0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
+
 // TAG antenna delay defaults to 16384
 // leftmost two bytes below will become the "short address"
 char tag_addr[] = "7D:00:22:EA:82:60:3B:9C";
@@ -120,16 +122,13 @@ void newRange()
 {
   int i;  //index of this anchor, expecting values 1 to 7
   int index = DW1000Ranging.getDistantDevice()->getShortAddress() & 0x07;
-  
+  float range = DW1000Ranging.getDistantDevice()->getRange();
+  ranges[index-1]=range;
+  return;
+  /*
   if (index > 0) {
     last_anchor_update[index - 1] = millis();  //decrement index for array index
     float range = DW1000Ranging.getDistantDevice()->getRange();
-    /*
-    Serial.print("range " );
-    Serial.print(range);
-    Serial.print(" power ");
-    Serial.println(DW1000Ranging.getDistantDevice()->getRXPower());
-    */
     last_anchor_distance[index - 1] = range;
     if (range < 0.0 || range > 30.0)     last_anchor_update[index - 1] = 0;  //error or out of bounds, ignore this measurement
   }
@@ -168,6 +167,7 @@ void newRange()
 
    
   }
+  */
 }  //end newRange
 
 void newDevice(DW1000Device *device)
@@ -300,12 +300,21 @@ void sendMessage(const char *message) {
 void udpTask(void * parameter) {
     while (true) {
         //OscWiFi.update();
-        OscWiFi.send(host, port, tagid,current_tag_position[0], current_tag_position[1],current_distance_rmse);
+        //OscWiFi.send(host, port, tagid,current_tag_position[0], current_tag_position[1],current_distance_rmse);
+        OscWiFi.send(host, port, tagid,ranges[0],ranges[1],ranges[2],ranges[3],ranges[4],ranges[5],ranges[6],ranges[7],ranges[8],ranges[9]);
+        Serial.print(ranges[0]);
+        Serial.print(" ");
+        Serial.print(ranges[1]);
+        Serial.print(" ");
+        Serial.print(ranges[2]);
+        Serial.print(" ");
+        Serial.println(ranges[3]);
+
         //char message[128];
         //snprintf(message, sizeof(message), "{'tagid':'%s','x':%.2f,'y':%.2f,'error':%.2f}", tagid, current_tag_position[0], current_tag_position[1], current_distance_rmse);
         //Serial.println(message);
         //char message[5]="hola";
         //sendMessage(message);
-        delay(10);
+        delay(100);
     }
 }
