@@ -1,4 +1,5 @@
 import pymysql.cursors
+import numpy as np
 
 class db():
 
@@ -80,3 +81,21 @@ class db():
         
        
         return norm
+    
+    def generateHeatMapMatrix(self, size):
+        """
+        Generate a heatmap matrix with normalized values.
+        
+        :param size: The size of the matrix (e.g., size=10 will create a 10x10 matrix).
+        :return: A 2D numpy array representing the heatmap.
+        """
+        matrix = np.zeros((size, size))
+        step = 1.0 / (size - 1)  # Calculate step size based on the size and marginpos
+
+        for i in range(size):
+            for j in range(size):
+                x = i * step
+                y = j * step
+                matrix[i, j] = self.getNormValue(x, y)
+        
+        return matrix
