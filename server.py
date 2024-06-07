@@ -223,7 +223,7 @@ def osc_handler(addr, *msg):
         y = position[1]
         presence=DB.getPresenceValue(x,y)
         OSCsender.send_message(addr+"_listen", presence)
-        print("msg[0],x,y", msg[0], x, y)
+        #print("msg[0],x,y", msg[0], x, y)
         DB.insertPos(addr, x, y)
 
 
@@ -268,7 +268,7 @@ if args.load: #if loading stored csv data
     server_thread.start()
 else:
     disp = dispatcher.Dispatcher()
-    disp.map("/tag1", osc_handler)
+    disp.map("/*", osc_handler)
 
     server = osc_server.ThreadingOSCUDPServer((LISTEN_IP, LISTEN_PORT), disp)
     server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -290,6 +290,7 @@ try:
 
             screen.fill(WHITE)  # Fill the screen with white before drawing
 
+            #heatmap_matrix = DB.generateHeatMapMatrix(anchor_positions,sizeY, sizeX)
             draw_heatmap(heatmap_matrix, sizeX, scale, min_x, min_y)  # Draw the heatmap first
 
             active_anchors = anchor_positions.keys()

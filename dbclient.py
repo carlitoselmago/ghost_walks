@@ -4,7 +4,7 @@ import time
 
 class db():
 
-    
+    limitrows=1000
 
     def __init__(self,presencemult=1,blocksize=0.2):
 
@@ -13,16 +13,20 @@ class db():
                                     user='ghost',
                                     password='walks',
                                     database='ghostwalks',
-                                    cursorclass=pymysql.cursors.DictCursor)
+                                    #cursorclass=pymysql.cursors.DictCursor)
+        )
         self.cursor=self.conn.cursor()
         self.presencemult=presencemult
         self.blocksize=blocksize
     
     def insertPos(self,tagid,x,y):
-        value=1
+     
+        #print("tagid,x,y",tagid,x,y)
+        value=1.0
         sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
-        self.cursor.execute(sql,(tagid,x,y,value))
 
+        res=self.cursor.execute(sql,(tagid,x,y,value))
+        #print("sql response",res)
         #now apply a reduced value in a ring of positions to make it more gradual
         rings=2
 
@@ -90,13 +94,14 @@ class db():
         return norm
     
     def getPresenceValue(self,x,y):
-        sql = "SELECT SUM(amount) as count FROM `positions` WHERE `x`>"+str(x-self.blocksize)+" AND `x`<"+str(x+self.blocksize)+" AND `y`>"+str(y-self.blocksize)+" AND `y`<"+str(y+self.blocksize)+";"
+        
+        sql = "SELECT SUM(amount) as count FROM `positions` WHERE `x`>"+str(x-self.blocksize)+" AND `x`<"+str(x+self.blocksize)+" AND `y`>"+str(y-self.blocksize)+" AND `y`<"+str(y+self.blocksize)+" LIMIT "+str(self.limitrows)+";"
         
         self.cursor.execute(sql)
         result = self.cursor.fetchone()
         #print("result",result)
         if result:
-            local=result["count"]
+            local=result[0]#result["count"]
             if local==None:
                 local=0.0
         else:
@@ -134,5 +139,5 @@ class db():
                 x = min_x + j * step_x
                 y = min_y + i * step_y
                 heatmap[i, j] = self.getPresenceValue(x, y)
-
+        #time.sleep(0.001)
         return heatmap
