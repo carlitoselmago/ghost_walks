@@ -7,6 +7,7 @@ import argparse
 from dbclient import db
 from pythonosc import dispatcher
 from pythonosc import osc_server
+from pythonosc import udp_client
 import threading
 import sys
 from scipy.optimize import minimize
@@ -19,7 +20,7 @@ LISTEN_IP = "0.0.0.0"  # Listen on all available network interfaces
 LISTEN_PORT = 8888     # Must match the port used by the ESP32
 
 SEND_IP = "192.168.4.255"  # Replace with the actual IP address of your ESP32
-SEND_PORT = 8888
+SEND_PORT = 8080
 
 anchor_positions = {
     "1": (0, 0),
@@ -40,6 +41,8 @@ parser.add_argument('-load', action='store_true', help='Load range data as csv')
 args = parser.parse_args()
 
 offlinedatafile="offlinetest_data.csv"
+
+OSCsender = udp_client.SimpleUDPClient(SEND_IP , SEND_PORT)
 
 def get_fixed_scale_factors(anchor_positions, display_height, rmse_bar_width, padding=50):
     min_x = min(anchor_positions.values(), key=lambda pos: pos[0])[0]
@@ -218,8 +221,11 @@ def osc_handler(addr, *msg):
     if rmse < max_error:
         x = position[0]
         y = position[1]
+        presence=DB.getPresenceValue(x,y)
+        OSCsender.send_message(addr+"_listen", presence)
         print("msg[0],x,y", msg[0], x, y)
-        DB.insertPos(msg[0], x, y)
+        DB.insertPos(addr, x, y)
+
 
 def load_csv():
     # Define the CSV file path
@@ -246,6 +252,16 @@ def load_csv():
             addr = row[0]
             msg = [float(value) for value in row[1:]]
             osc_handler(addr, *msg)
+
+def send_message_to_esp32(message, address):
+    try:
+        message_bytes = struct.pack('f', message) if isinstance(message, float) else str(message).encode('utf-8')
+        send_sock.sendto(message_bytes, (address, SEND_UDP_PORT))
+        #print(f"Sent message: {message} to {address}:{SEND_UDP_PORT}")
+    except PermissionError as e:
+        print(f"PermissionError: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 if args.load: #if loading stored csv data
     server_thread = threading.Thread(target=load_csv)

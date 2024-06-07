@@ -12,6 +12,7 @@
 #include <ArduinoOSCWiFi.h>
 #include "DW1000Ranging.h"
 #include "DW1000.h"
+#include <string.h>
 
 //#define DEBUG_TRILAT  //prints in trilateration code
 //#define DEBUG_DIST     //print anchor distances
@@ -36,6 +37,12 @@ const uint16_t port = 8888;
 
 
 float ranges[10] ={0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
+
+volatile float presence=0;
+
+// Create a char array with enough space for the concatenated result
+char tagid_listen[50]; // Adjust size as needed
+
 
 // TAG antenna delay defaults to 16384
 // leftmost two bytes below will become the "short address"
@@ -65,12 +72,19 @@ char incomingPacket[255];  // Buffer for incoming packets
 
 
 // Task handle for the sound task
-TaskHandle_t udpTaskHandle;
+TaskHandle_t OSCTaskHandle;
 
 void setup()
 {
   Serial.begin(115200);
   delay(1000);
+
+  // Copy the initial string into the char array
+  strcpy(tagid_listen, initialTag);
+
+  // Concatenate the additional characters
+  strcat(tagid_listen, "_listen");
+
 
   //initialize configuration
   SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
@@ -99,15 +113,18 @@ void setup()
   
   // Create the udp task
   xTaskCreate(
-    udpTask,          // Task function
+    OSCTask,          // Task function
     "UDP Task",       // Name of the task
     2000,               // Stack size (in words)
     NULL,               // Task input parameter
     1,                  // Priority of the task
-    &udpTaskHandle   // Task handle
+    &OSCTaskHandle   // Task handle
    // 0                 // core to run the task
   );
   
+  // Set up OSC listener for the specific address
+  OscWiFi.subscribe(tagid_listen, onOscMessageReceived);
+
 }
 
 void loop()
@@ -125,49 +142,7 @@ void newRange()
   float range = DW1000Ranging.getDistantDevice()->getRange();
   ranges[index-1]=range;
   return;
-  /*
-  if (index > 0) {
-    last_anchor_update[index - 1] = millis();  //decrement index for array index
-    float range = DW1000Ranging.getDistantDevice()->getRange();
-    last_anchor_distance[index - 1] = range;
-    if (range < 0.0 || range > 30.0)     last_anchor_update[index - 1] = 0;  //error or out of bounds, ignore this measurement
-  }
 
-  int detected = 0;
-
-  //reject old measurements
-  for (i = 0; i < N_ANCHORS; i++) {
-    if (millis() - last_anchor_update[i] > ANCHOR_DISTANCE_EXPIRED) last_anchor_update[i] = 0; //not from this one
-    if (last_anchor_update[i] > 0) detected++;
-  }
-
-#ifdef DEBUG_DIST
-    // print distance and age of measurement
-    uint32_t current_time = millis();
-    for (i = 0; i < N_ANCHORS; i++) {
-      Serial.print(i+1); //ID
-      Serial.print("> ");
-      Serial.print(last_anchor_distance[i]);
-      Serial.print("\t");
-      Serial.println(current_time - last_anchor_update[i]); //age in millis
-    }
-#endif
-
-  if ( detected == 4) { //four measurements minimum
-
-    trilat2D_4A();
-    //output the values (X, Y and error estimate)
-    Serial.print("P= ");
-    Serial.print(current_tag_position[0]);
-    Serial.write(',');
-    Serial.print(current_tag_position[1]);
-    Serial.write(',');
-    Serial.print("error:");
-    Serial.println(current_distance_rmse);
-
-   
-  }
-  */
 }  //end newRange
 
 void newDevice(DW1000Device *device)
@@ -297,8 +272,9 @@ void sendMessage(const char *message) {
     udp.endPacket();
 }
 
-void udpTask(void * parameter) {
+void OSCTask(void * parameter) {
     while (true) {
+        OscWiFi.update(); // This is required to keep the OSC listener active
         //OscWiFi.update();
         //OscWiFi.send(host, port, tagid,current_tag_position[0], current_tag_position[1],current_distance_rmse);
         OscWiFi.send(host, port, tagid,ranges[0],ranges[1],ranges[2],ranges[3],ranges[4],ranges[5],ranges[6],ranges[7],ranges[8],ranges[9]);
@@ -315,6 +291,33 @@ void udpTask(void * parameter) {
         //Serial.println(message);
         //char message[5]="hola";
         //sendMessage(message);
-        delay(100);
+
+        //sound part
+        if (presence > 0.2) {
+            // Generate a click sound
+            dac_output_voltage(DAC_CHANNEL_1, 255); // Set DAC to maximum voltage
+            delayMicroseconds(100); // Duration of the click
+            dac_output_voltage(DAC_CHANNEL_1, 0);   // Set DAC to zero voltage
+            delayMicroseconds(100); // Duration of the silence after click
+        }
+        
+        // Calculate the delay between clicks based on presence
+        int delayBetweenClicks = (1.0 - presence) * 1000; // Adjust this multiplier as needed
+        
+        // Wait for the calculated delay time
+        delay(delayBetweenClicks);
+
+
+        //delay(100);
     }
+}
+
+// OSC message handler
+void onOscMessageReceived(OSCMessage &msg) {
+  if (msg.fullMatch(tagid)) {
+    // Handle the OSC message
+    Serial.print("OSC Message received on address: ");
+    Serial.println(tagid);
+    // Add code here to process the message as needed
+  }
 }
