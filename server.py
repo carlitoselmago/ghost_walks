@@ -19,8 +19,8 @@ import itertools
 LISTEN_IP = "0.0.0.0"  # Listen on all available network interfaces
 LISTEN_PORT = 8888     # Must match the port used by the ESP32
 
-SEND_IP = "192.168.4.255"  # Replace with the actual IP address of your ESP32
-SEND_PORT = 8080
+SEND_IP = "192.168.10.255"  # Replace with the actual IP address of your ESP32
+SEND_PORT = 8888
 
 anchor_positions = {
     "1": (0, 0),
@@ -42,7 +42,7 @@ args = parser.parse_args()
 
 offlinedatafile="offlinetest_data.csv"
 
-OSCsender = udp_client.SimpleUDPClient(SEND_IP , SEND_PORT)
+OSCsender = udp_client.SimpleUDPClient(SEND_IP , SEND_PORT,True)
 
 def get_fixed_scale_factors(anchor_positions, display_height, rmse_bar_width, padding=50):
     min_x = min(anchor_positions.values(), key=lambda pos: pos[0])[0]
@@ -140,21 +140,22 @@ def generateHeatMapMatrix(self, sizeX, sizeY):
     return heatmap
 
 def draw_rmse_bar(screen, rmse, rmse_bar_width):
-    bar_height = int((rmse / 5.0) * (display_height - 100))  # Scale RMSE to bar height (max 500 pixels)
-    bar_width = rmse_bar_width - 20
-    bar_x = display_width - rmse_bar_width + 80  # Position on the right
-    bar_y = 50 + ((display_height - 100) - bar_height)  # Position the bar from the top
+    if rmse>0.0:
+        bar_height = int((rmse / 5.0) * (display_height - 100))  # Scale RMSE to bar height (max 500 pixels)
+        bar_width = rmse_bar_width - 20
+        bar_x = display_width - rmse_bar_width + 80  # Position on the right
+        bar_y = 50 + ((display_height - 100) - bar_height)  # Position the bar from the top
 
-    # Draw the bar background
-    pygame.draw.rect(screen, WHITE, (bar_x, 50, bar_width, display_height - 100))
+        # Draw the bar background
+        pygame.draw.rect(screen, WHITE, (bar_x, 50, bar_width, display_height - 100))
 
-    # Draw the RMSE bar
-    pygame.draw.rect(screen, BLUE, (bar_x, bar_y, bar_width, bar_height))
+        # Draw the RMSE bar
+        pygame.draw.rect(screen, BLUE, (bar_x, bar_y, bar_width, bar_height))
 
-    # Draw the RMSE text
-    font = pygame.font.Font(None, 36)
-    text = font.render(f"RMSE: {rmse:.2f}", True, BLACK)
-    screen.blit(text, (bar_x - 60, 10))
+        # Draw the RMSE text
+        font = pygame.font.Font(None, 36)
+        text = font.render(f"RMSE: {rmse:.2f}", True, BLACK)
+        screen.blit(text, (bar_x - 60, 10))
 
 def draw_grid(active_anchors, scale, min_x, min_y):
     for anchor_id, (ax_pos, ay_pos) in anchor_positions.items():
@@ -217,13 +218,18 @@ def osc_handler(addr, *msg):
 
     position, error_percentage = calculate_position(ranges[0:len(anchor_positions)], anchor_positions)
     rmse = error_percentage / 10
-    print(position, rmse)
+    
     if rmse < max_error:
         x = position[0]
         y = position[1]
+        
         presence=DB.getPresenceValue(x,y)
+        if presence>0.95:
+            presence=0.95
         OSCsender.send_message(addr+"_listen", presence)
+        print(position, "rmse:",rmse,"presence:",presence)
         #print("msg[0],x,y", msg[0], x, y)
+        #print("addr, x, y",addr, x, y)
         DB.insertPos(addr, x, y)
 
 
@@ -263,23 +269,25 @@ def send_message_to_esp32(message, address):
     except Exception as e:
         print(f"An error occurred: {e}")
 
+if args.gui:
+    heatmap_cell_size = 50  # Adjust this value to change the density of the heatmap
+    sizeX = (display_width - rmse_bar_width) // heatmap_cell_size
+    sizeY = display_height // heatmap_cell_size
+    heatmap_matrix = DB.generateHeatMapMatrix(anchor_positions,sizeY, sizeX)
+
+
 if args.load: #if loading stored csv data
     server_thread = threading.Thread(target=load_csv)
     server_thread.start()
 else:
     disp = dispatcher.Dispatcher()
-    disp.map("/*", osc_handler)
+    disp.map("/tag1", osc_handler)
 
     server = osc_server.ThreadingOSCUDPServer((LISTEN_IP, LISTEN_PORT), disp)
     server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_thread = threading.Thread(target=server.serve_forever)
     server_thread.start()
 
-if args.gui:
-    heatmap_cell_size = 50  # Adjust this value to change the density of the heatmap
-    sizeX = (display_width - rmse_bar_width) // heatmap_cell_size
-    sizeY = display_height // heatmap_cell_size
-    heatmap_matrix = DB.generateHeatMapMatrix(anchor_positions,sizeY, sizeX)
 
 try:
     while True:

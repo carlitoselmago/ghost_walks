@@ -12,6 +12,7 @@
 #include <ArduinoOSCWiFi.h>
 #include "DW1000Ranging.h"
 #include "DW1000.h"
+#include "driver/dac.h"
 #include <string.h>
 
 //#define DEBUG_TRILAT  //prints in trilateration code
@@ -38,7 +39,7 @@ const uint16_t port = 8888;
 
 float ranges[10] ={0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
 
-volatile float presence=0;
+float presence=0.0;
 
 // Create a char array with enough space for the concatenated result
 char tagid_listen[50]; // Adjust size as needed
@@ -74,18 +75,21 @@ char incomingPacket[255];  // Buffer for incoming packets
 // Task handle for the sound task
 TaskHandle_t OSCTaskHandle;
 
+// Task handle for the sound task
+TaskHandle_t soundTaskHandle;
+
 void setup()
 {
   Serial.begin(115200);
   delay(1000);
 
   // Copy the initial string into the char array
-  strcpy(tagid_listen, initialTag);
+  strcpy(tagid_listen, tagid);
 
   // Concatenate the additional characters
   strcat(tagid_listen, "_listen");
 
-
+  //Serial.println(tagid_listen);
   //initialize configuration
   SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
   DW1000Ranging.initCommunication(PIN_RST, PIN_SS, PIN_IRQ); //Reset, CS, IRQ pin
@@ -112,23 +116,56 @@ void setup()
 
   
   // Create the udp task
-  xTaskCreate(
+  xTaskCreatePinnedToCore(
     OSCTask,          // Task function
     "UDP Task",       // Name of the task
     2000,               // Stack size (in words)
     NULL,               // Task input parameter
-    1,                  // Priority of the task
-    &OSCTaskHandle   // Task handle
-   // 0                 // core to run the task
+    2,                  // Priority of the task
+    &OSCTaskHandle,  // Task handle
+    0                 // core to run the task
+  );
+
+
+     // Create the sound task
+  xTaskCreatePinnedToCore(
+  //xTaskCreate(
+    soundTask,          // Task function
+    "Sound Task",       // Name of the task
+    1000,               // Stack size (in words)
+    NULL,               // Task input parameter
+    4,                  // Priority of the task
+    &soundTaskHandle ,   // Task handle
+    0                 // core to run the task
   );
   
   // Set up OSC listener for the specific address
-  OscWiFi.subscribe(tagid_listen, onOscMessageReceived);
+  //OscWiFi.subscribe(tagid_listen, onOscMessageReceived);
 
+  OscWiFi.subscribe(port, tagid_listen,
+    [&](const OscMessage& msg) {
+      //Serial.print("OSC Message received on address: ");
+      //Serial.println(tagid_listen);
+
+      // Check if the message contains at least one argument
+      if (msg.size() > 0) {
+        // Retrieve and print the first argument as a float
+        float value = msg.arg<float>(0);
+        Serial.print("Presence value: ");
+        Serial.println(value);
+        presence=value;
+      } else {
+        Serial.println("No arguments in the OSC message.");
+      }
+    }
+    );
+
+   dac_output_enable(DAC_CHANNEL_1); // Enable DAC channel (GPIO25 or GPIO26)
 }
 
 void loop()
 {
+  OscWiFi.update(); // This is required to keep the OSC listener active
   DW1000Ranging.loop();
 }
 
@@ -157,114 +194,6 @@ void inactiveDevice(DW1000Device *device)
   Serial.println(device->getShortAddress(), HEX);
 }
 
-int trilat2D_4A(void) {
-
-  // for method see technical paper at
-  // https://www.th-luebeck.de/fileadmin/media_cosa/Dateien/Veroeffentlichungen/Sammlung/TR-2-2015-least-sqaures-with-ToA.pdf
-  // S. James Remington 1/2022
-  //
-  // A nice feature of this method is that the normal matrix depends only on the anchor arrangement
-  // and needs to be inverted only once. Hence, the position calculation should be robust.
-  //
-  static bool first = true;  //first time through, some preliminary work
-  float d[N_ANCHORS]; //temp vector, distances from anchors
-
-  static float A[N_ANCHORS - 1][2], Ainv[2][2], b[N_ANCHORS - 1], kv[N_ANCHORS]; //calculated in first call, used in later calls
-
-  int i, j, k;
-  // copy distances to local storage
-  for (i = 0; i < N_ANCHORS; i++) d[i] = last_anchor_distance[i];
-
-#ifdef DEBUG_TRILAT
-  char line[60];
-  snprintf(line, sizeof line, "d: %6.2f %6.2f %6.2f", d[0], d[1], d[2]);
-  Serial.println(line);
-#endif
-
-  if (first) {  //intermediate fixed vectors
-    first = false;
-
-    float x[N_ANCHORS], y[N_ANCHORS]; //intermediate vectors
-
-    for (i = 0; i < N_ANCHORS; i++) {
-      x[i] = anchor_matrix[i][0];
-      y[i] = anchor_matrix[i][1];
-      kv[i] = x[i] * x[i] + y[i] * y[i];
-    }
-
-    // set up least squares equation
-
-    for (i = 1; i < N_ANCHORS; i++) {
-      A[i - 1][0] = x[i] - x[0];
-      A[i - 1][1] = y[i] - y[0];
-#ifdef DEBUG_TRILAT
-      snprintf(line, sizeof line, "A  %5.2f %5.2f", A[i - 1][0], A[i - 1][1]);
-      Serial.println(line);
-#endif
-    }
-    float ATA[2][2];  //calculate A transpose A
-    // Cij = sum(k) (Aki*Akj)
-    for (i = 0; i < 2; i++) {
-      for (j = 0; j < 2; j++) {
-        ATA[i][j] = 0.0;
-        for (k = 0; k < N_ANCHORS - 1; k++) ATA[i][j] += A[k][i] * A[k][j];
-      }
-    }
-#ifdef DEBUG_TRILAT
-    snprintf(line, sizeof line, "ATA %5.2f %5.2f\n    %5.2f %5.2f", ATA[0][0], ATA[0][1], ATA[1][0], ATA[1][1]);
-    Serial.println(line);
-#endif
-
-    //invert ATA
-    float det = ATA[0][0] * ATA[1][1] - ATA[1][0] * ATA[0][1];
-    if (fabs(det) < 1.0E-4) {
-      Serial.println("***Singular matrix, check anchor coordinates***");
-      while (1) delay(1); //hang
-    }
-    det = 1.0 / det;
-    //scale adjoint
-    Ainv[0][0] =  det * ATA[1][1];
-    Ainv[0][1] = -det * ATA[0][1];
-    Ainv[1][0] = -det * ATA[1][0];
-    Ainv[1][1] =  det * ATA[0][0];
-#ifdef DEBUG_TRILAT
-    snprintf(line, sizeof line, "Ainv %7.4f %7.4f\n     %7.4f %7.4f", Ainv[0][0], Ainv[0][1], Ainv[1][0], Ainv[1][1]);
-    Serial.println(line);
-    snprintf(line, sizeof line, "det Ainv %8.3e", det);
-    Serial.println(line);
-#endif
-
-  } //end if (first);
-
-  //least squares solution for position
-  //solve:  (x,y) = 0.5*(Ainv AT b)
-
-  for (i = 1; i < N_ANCHORS; i++) {
-    b[i - 1] = d[0] * d[0] - d[i] * d[i] + kv[i] - kv[0];
-  }
-
-  float ATb[2] = {0.0}; //A transpose b
-  for (i = 0; i < N_ANCHORS - 1; i++) {
-    ATb[0] += A[i][0] * b[i];
-    ATb[1] += A[i][1] * b[i];
-  }
-
-  current_tag_position[0] = 0.5 * (Ainv[0][0] * ATb[0] + Ainv[0][1] * ATb[1]);
-  current_tag_position[1] = 0.5 * (Ainv[1][0] * ATb[0] + Ainv[1][1] * ATb[1]);
-
-  // calculate rms error for distances
-  float rmse = 0.0, dc0 = 0.0, dc1 = 0.0, dc2 = 0.0;
-  for (i = 0; i < N_ANCHORS; i++) {
-    dc0 = current_tag_position[0] - anchor_matrix[i][0];
-    dc1 = current_tag_position[1] - anchor_matrix[i][1];
-    dc2 = anchor_matrix[i][2]; //include known Z coordinate of anchor
-    dc0 = d[i] - sqrt(dc0 * dc0 + dc1 * dc1 + dc2 * dc2);
-    rmse += dc0 * dc0;
-  }
-  current_distance_rmse = sqrt(rmse / ((float)N_ANCHORS));
-
-  return 1;
-} 
 
 void sendMessage(const char *message) {
     udp.beginPacket(host, port);
@@ -274,10 +203,11 @@ void sendMessage(const char *message) {
 
 void OSCTask(void * parameter) {
     while (true) {
-        OscWiFi.update(); // This is required to keep the OSC listener active
+        
         //OscWiFi.update();
         //OscWiFi.send(host, port, tagid,current_tag_position[0], current_tag_position[1],current_distance_rmse);
         OscWiFi.send(host, port, tagid,ranges[0],ranges[1],ranges[2],ranges[3],ranges[4],ranges[5],ranges[6],ranges[7],ranges[8],ranges[9]);
+        /*
         Serial.print(ranges[0]);
         Serial.print(" ");
         Serial.print(ranges[1]);
@@ -285,13 +215,14 @@ void OSCTask(void * parameter) {
         Serial.print(ranges[2]);
         Serial.print(" ");
         Serial.println(ranges[3]);
-
+        */
         //char message[128];
         //snprintf(message, sizeof(message), "{'tagid':'%s','x':%.2f,'y':%.2f,'error':%.2f}", tagid, current_tag_position[0], current_tag_position[1], current_distance_rmse);
         //Serial.println(message);
         //char message[5]="hola";
         //sendMessage(message);
-
+        
+        /*
         //sound part
         if (presence > 0.2) {
             // Generate a click sound
@@ -306,12 +237,34 @@ void OSCTask(void * parameter) {
         
         // Wait for the calculated delay time
         delay(delayBetweenClicks);
+        */
 
-
-        //delay(100);
+        delay(50);
     }
 }
 
+void soundTask(void * parameter) {
+    //float presence = 0.1;  // Example presence value, you can change this dynamically in your code
+
+    while (true) {
+        if (presence > 0.2) {
+            // Generate a click sound
+            dac_output_voltage(DAC_CHANNEL_1, 255); // Set DAC to maximum voltage
+            delayMicroseconds(100); // Duration of the click
+            dac_output_voltage(DAC_CHANNEL_1, 0);   // Set DAC to zero voltage
+            delayMicroseconds(100); // Duration of the silence after click
+        }
+        
+        // Calculate the delay between clicks based on presence
+        int delayBetweenClicks = (1.0 - presence) * 1000; // Adjust this multiplier as needed
+        
+        // Wait for the calculated delay time
+        //Serial.print("delayBetweenClicks: ");
+        //Serial.println(delayBetweenClicks);
+        delay(delayBetweenClicks);
+    }
+}
+/*
 // OSC message handler
 void onOscMessageReceived(OSCMessage &msg) {
   if (msg.fullMatch(tagid)) {
@@ -321,3 +274,4 @@ void onOscMessageReceived(OSCMessage &msg) {
     // Add code here to process the message as needed
   }
 }
+*/

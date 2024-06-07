@@ -1,64 +1,62 @@
+import pymysql
 import pymysql.cursors
 import numpy as np
 import time
+import logging
 
 class db():
 
     limitrows=1000
 
+    params={"host":'localhost',
+            "user":'ghost',
+            "password":'walks',
+         "database":'ghostwalks'}
+
     def __init__(self,presencemult=1,blocksize=0.2):
 
         # Connect to the database
-        self.conn = pymysql.connect(host='localhost',
-                                    user='ghost',
-                                    password='walks',
-                                    database='ghostwalks',
-                                    #cursorclass=pymysql.cursors.DictCursor)
-        )
+        self.conn = pymysql.connect(host=self.params["host"],user=self.params["user"],password=self.params["password"],database=self.params["database"])
+        #cursorclass=pymysql.cursors.DictCursor)
+      
         self.cursor=self.conn.cursor()
         self.presencemult=presencemult
         self.blocksize=blocksize
     
-    def insertPos(self,tagid,x,y):
-     
-        #print("tagid,x,y",tagid,x,y)
-        value=1.0
-        sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
+    def insertPos(self, tagid, x, y):
+   
+        conn=self.conn = pymysql.connect(host=self.params["host"],user=self.params["user"],password=self.params["password"],database=self.params["database"])
+        cursor = conn.cursor()
+        value = 1.0
+        sql = "INSERT INTO `positions` (`tagname`, `x`, `y`, `amount`) VALUES (%s, %s, %s, %s)"
+        
+        try:
+            # Insert the main position
+            cursor.execute(sql, (tagid, x, y, value))
 
-        res=self.cursor.execute(sql,(tagid,x,y,value))
-        #print("sql response",res)
-        #now apply a reduced value in a ring of positions to make it more gradual
-        rings=2
+            # Insert positions in a ring around the main position
+            rings = 2
+            for r in range(rings):
+                d = self.blocksize * r
+                u = value / (r + 2)
+                positions = [
+                    (x - d, y + d, u), (x, y + d, u), (x + d, y + d, u),
+                    (x + d, y, u), (x + d, y - d, u), (x, y - d, u),
+                    (x - d, y - d, u), (x - d, y, u)
+                ]
 
-        for r in range(rings):
-            d=(self.blocksize*r) #distance relative
-            u=value/(r+2)
-            #top left
-            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
-            self.cursor.execute(sql,(tagid,x-d,y+d,u))
-            #top
-            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
-            self.cursor.execute(sql,(tagid,x,y+d,u))
-            #top right
-            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
-            self.cursor.execute(sql,(tagid,x+d,y+d,u))
-            #right
-            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
-            self.cursor.execute(sql,(tagid,x+d,y,u))
-            #right bottom
-            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
-            self.cursor.execute(sql,(tagid,x+d,y-d,u))
-            #bottom
-            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
-            self.cursor.execute(sql,(tagid,x,y-d,u))
-            #bottom left
-            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
-            self.cursor.execute(sql,(tagid,x-d,y-d,u))
-            #left
-            sql = "INSERT INTO `positions` (`tagname`, `x`,`y`,`amount` ) VALUES (%s, %s,%s,%s)"
-            self.cursor.execute(sql,(tagid,x-d,y-d,u))
+                for pos in positions:
+                    cursor.execute(sql, (tagid, *pos))
 
-        self.conn.commit()
+            conn.commit()
+        except pymysql.MySQLError as e:
+            logging.error(f"SQL Error: {e}")
+            conn.rollback()
+        except Exception as e:
+            logging.error(f"Unexpected error: {e}")
+            conn.rollback()
+        finally:
+            cursor.close()
 
     def getHeatMapData(self):
         sql="SELECT "
@@ -94,11 +92,11 @@ class db():
         return norm
     
     def getPresenceValue(self,x,y):
-        
-        sql = "SELECT SUM(amount) as count FROM `positions` WHERE `x`>"+str(x-self.blocksize)+" AND `x`<"+str(x+self.blocksize)+" AND `y`>"+str(y-self.blocksize)+" AND `y`<"+str(y+self.blocksize)+" LIMIT "+str(self.limitrows)+";"
-        
-        self.cursor.execute(sql)
-        result = self.cursor.fetchone()
+        conn=self.conn = pymysql.connect(host=self.params["host"],user=self.params["user"],password=self.params["password"],database=self.params["database"])
+        cursor=conn.cursor()
+        sql = "SELECT SUM(amount) as count FROM `positions` WHERE `x`>"+str(x-self.blocksize)+" AND `x`<"+str(x+self.blocksize)+" AND `y`>"+str(y-self.blocksize)+" AND `y`<"+str(y+self.blocksize)+" LIMIT "+str(self.limitrows)+";"  
+        cursor.execute(sql)
+        result = cursor.fetchone()
         #print("result",result)
         if result:
             local=result[0]#result["count"]
