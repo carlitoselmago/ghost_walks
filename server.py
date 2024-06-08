@@ -23,16 +23,35 @@ SEND_IP = "192.168.2.255"  # Replace with the actual IP address of your ESP32
 SEND_PORT = 8888
 
 anchor_positions = {
-    "1": (0, 0),
+    "1": (0.0, 0.0),
     "2": (5.6, 0.6),
-    "3": (-1, 6),
-    "4": (7, 5.5)
+    "3": (-1.0, 6.0),
+    "4": (7.0, 5.5)
     # Add more anchors as needed
 }
 
 blocksize=0.2 # grid step in meters
 presencemult=0.01 #values from each position will be multiplied by this value
 
+#get boundaries based on anchor_positions
+min_x=0.0
+max_x=0.0
+min_y=0.0
+max_y=0.0
+
+for p in anchor_positions:
+    pos=anchor_positions[p]
+    if pos[0]>max_x:
+        max_x=pos[0]
+    if pos[0]<min_x:
+        min_x=pos[0]
+    if pos[1]<min_y:
+        min_y=pos[1]
+    if pos[1]>max_y:
+        max_y=pos[1]
+
+print("BOUNDARIES",min_x,max_x,min_y,max_y)
+print("")
 # Argument parser setup
 parser = argparse.ArgumentParser(description="UWB Positioning System")
 parser.add_argument('-gui', action='store_true', help='Enable GUI using Pygame')
@@ -111,33 +130,6 @@ def calculate_position(distances, anchor_positions):
     
     return optimal_position, error_percentage
 
-def generateHeatMapMatrix(self, sizeX, sizeY):
-    """
-    Generate a heatmap matrix with normalized values.
-
-    :param sizeX: Number of columns in the heatmap.
-    :param sizeY: Number of rows in the heatmap.
-    :return: A 2D numpy array representing the heatmap.
-    """
-    # Determine the boundaries based on anchor points
-    min_x = min(anchor_positions.values(), key=lambda pos: pos[0])[0]
-    min_y = min(anchor_positions.values(), key=lambda pos: pos[1])[1]
-    max_x = max(anchor_positions.values(), key=lambda pos: pos[0])[0]
-    max_y = max(anchor_positions.values(), key=lambda pos: pos[1])[1]
-    
-    # Calculate the step size in meters for each cell in the heatmap
-    step_x = (max_x - min_x) / (sizeX - 1) if sizeX > 1 else 0
-    step_y = (max_y - min_y) / (sizeY - 1) if sizeY > 1 else 0
-
-    heatmap = np.zeros((sizeY, sizeX))
-
-    for i in range(sizeY):
-        for j in range(sizeX):
-            x = min_x + j * step_x
-            y = min_y + i * step_y
-            heatmap[i, j] = self.getPresenceValue(x, y)
-
-    return heatmap
 
 def draw_rmse_bar(screen, rmse, rmse_bar_width):
     if rmse>0.0:
@@ -170,7 +162,27 @@ def draw_grid(active_anchors, scale, min_x, min_y):
     # Draw the RMSE bar
     draw_rmse_bar(screen, rmse, rmse_bar_width)
 
-def draw_heatmap(matrix, size, scale, min_x, min_y):
+def draw_heatmap(matrix):
+    #print("MATRIX SHAPE",matrix.shape)
+    height,width=matrix.shape
+    global blocksize
+    padding=50
+
+    step = blocksize*scale#30#(display_width - rmse_bar_width) / blocksize
+    #print("step",step)
+    for x in range(width):
+        for y in range(height): 
+              
+            value = float(matrix[y][x])  # Ensure the value is a float
+            # Calculate the color based on the value
+            red = int(value * 255)
+            green = int((1 - value) * 255)
+            color = (red, green, 0)
+            px_pos = int((x * step) + padding)
+            py_pos = int((y * step) + padding)
+            pygame.draw.rect(screen, color, (px_pos, py_pos, step, step))
+           
+    """
     step_x = (display_width - rmse_bar_width) / size
     step_y = display_height / size
     for i in range(size):
@@ -187,6 +199,7 @@ def draw_heatmap(matrix, size, scale, min_x, min_y):
                 pygame.draw.rect(screen, color, (px_pos, py_pos, step_x, step_y))
             except:
                 pass
+    """
 
 def osc_handler(addr, *msg):
     global ranges, x, y, rmse, max_error
@@ -270,10 +283,11 @@ def send_message_to_esp32(message, address):
         print(f"An error occurred: {e}")
 
 if args.gui:
-    heatmap_cell_size = 50  # Adjust this value to change the density of the heatmap
-    sizeX = (display_width - rmse_bar_width) // heatmap_cell_size
-    sizeY = display_height // heatmap_cell_size
-    heatmap_matrix = DB.generateHeatMapMatrix(anchor_positions,sizeY, sizeX)
+    #heatmap_cell_size = 50  # Adjust this value to change the density of the heatmap
+    #sizeX = (display_width - rmse_bar_width) // heatmap_cell_size
+    #sizeY = display_height // heatmap_cell_size
+    
+    heatmap_matrix = DB.generateHeatMapMatrix(min_x,max_x,min_y,max_y)
 
 
 if args.load: #if loading stored csv data
@@ -298,8 +312,8 @@ try:
 
             screen.fill(WHITE)  # Fill the screen with white before drawing
 
-            heatmap_matrix = DB.generateHeatMapMatrix(anchor_positions,sizeY, sizeX)
-            draw_heatmap(heatmap_matrix, sizeX, scale, min_x, min_y)  # Draw the heatmap first
+            #heatmap_matrix = DB.generateHeatMapMatrix(min_x,max_x,min_y,max_y)
+            draw_heatmap(heatmap_matrix)  # Draw the heatmap first
 
             active_anchors = anchor_positions.keys()
             draw_grid(active_anchors, scale, min_x, min_y)  # Draw the grid and anchors

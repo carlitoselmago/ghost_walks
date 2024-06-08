@@ -3,6 +3,7 @@ import pymysql.cursors
 import numpy as np
 import time
 import logging
+import sys
 
 class db():
 
@@ -91,9 +92,10 @@ class db():
        
         return norm
     
-    def getPresenceValue(self,x,y):
-        conn=self.conn = pymysql.connect(host=self.params["host"],user=self.params["user"],password=self.params["password"],database=self.params["database"])
-        cursor=conn.cursor()
+    def getPresenceValue(self,x,y,cursor=False):
+        if not cursor:
+            conn=self.conn = pymysql.connect(host=self.params["host"],user=self.params["user"],password=self.params["password"],database=self.params["database"])
+            cursor=conn.cursor()
         sql = "SELECT SUM(amount) as count FROM `positions` WHERE `x`>"+str(x-self.blocksize)+" AND `x`<"+str(x+self.blocksize)+" AND `y`>"+str(y-self.blocksize)+" AND `y`<"+str(y+self.blocksize)+" LIMIT "+str(self.limitrows)+";"  
         cursor.execute(sql)
         result = cursor.fetchone()
@@ -112,7 +114,13 @@ class db():
         
         return result
         
-    def generateHeatMapMatrix(self, anchor_positions, sizeX, sizeY):
+    def generateHeatMapMatrix(self, min_x,max_x,min_y,max_y):
+        conn=self.conn = pymysql.connect(host=self.params["host"],user=self.params["user"],password=self.params["password"],database=self.params["database"])
+        cursor=conn.cursor()
+        sizeX=int(((abs(min_x)+max_x)/self.blocksize)+self.blocksize)
+        sizeY=int(((abs(min_y)+max_y)/self.blocksize)+self.blocksize)
+
+        #print("sizeX, sizeY",sizeX, sizeY)
         """
         Generate a heatmap matrix with normalized values, inverting the Y coordinate.
 
@@ -120,22 +128,19 @@ class db():
         :param sizeY: Number of rows in the heatmap.
         :return: A 2D numpy array representing the heatmap.
         """
-        # Determine the boundaries based on anchor points
-        min_x = min(anchor_positions.values(), key=lambda pos: pos[0])[0]
-        min_y = min(anchor_positions.values(), key=lambda pos: pos[1])[1]
-        max_x = max(anchor_positions.values(), key=lambda pos: pos[0])[0]
-        max_y = max(anchor_positions.values(), key=lambda pos: pos[1])[1]
         
         # Calculate the step size in meters for each cell in the heatmap
-        step_x = (max_x - min_x) / (sizeX - 1) if sizeX > 1 else 0
-        step_y = (max_y - min_y) / (sizeY - 1) if sizeY > 1 else 0
+        step_x = self.blocksize#(max_x - min_x) / (sizeX - 1) if sizeX > 1 else 0
+        step_y = self.blocksize#(max_y - min_y) / (sizeY - 1) if sizeY > 1 else 0
 
         heatmap = np.zeros((sizeY, sizeX))
-
+        
         for i in range(sizeY):
             for j in range(sizeX):
                 x = min_x + j * step_x
                 # Invert y-coordinate by starting from the top
                 y = max_y - i * step_y
-                heatmap[i, j] = self.getPresenceValue(x, y)
+                #print("getPresenceValue",x,y)
+                heatmap[i, j] = self.getPresenceValue(x, y,cursor)
+        np.set_printoptions(threshold=sys.maxsize)
         return heatmap
