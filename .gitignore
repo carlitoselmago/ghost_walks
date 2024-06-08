@@ -1,7 +1,7 @@
 *.pyc
 # Prerequisites
 *.d
-__pycache__
+__pycache__/
 # Object files
 *.o
 *.ko
