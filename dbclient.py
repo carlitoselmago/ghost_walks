@@ -112,9 +112,9 @@ class db():
         
         return result
         
-    def generateHeatMapMatrix(self,anchor_positions, sizeX, sizeY):
+    def generateHeatMapMatrix(self, anchor_positions, sizeX, sizeY):
         """
-        Generate a heatmap matrix with normalized values.
+        Generate a heatmap matrix with normalized values, inverting the Y coordinate.
 
         :param sizeX: Number of columns in the heatmap.
         :param sizeY: Number of rows in the heatmap.
@@ -135,7 +135,7 @@ class db():
         for i in range(sizeY):
             for j in range(sizeX):
                 x = min_x + j * step_x
-                y = min_y + i * step_y
+                # Invert y-coordinate by starting from the top
+                y = max_y - i * step_y
                 heatmap[i, j] = self.getPresenceValue(x, y)
-        #time.sleep(0.001)
         return heatmap

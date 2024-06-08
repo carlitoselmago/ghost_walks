@@ -33,13 +33,17 @@ const uint8_t PIN_SS = 4;   // spi select pin
 const char *tagid = "/tag1";
 const char ssid[] = "MANGO";
 const char password[] = "remotamente";
-const char host[] = "192.168.10.255";//"192.168.10.255";//"192.168.1.139";  // Set this to your computer's IP address
+const char host[] = "192.168.2.255";//"192.168.10.255";//"192.168.1.139";  // Set this to your computer's IP address
 const uint16_t port = 8888;
 
 
 float ranges[10] ={0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0};
 
 float presence=0.0;
+float soundpresence=0.0;
+float soundpresencestep=0.001;
+
+int runtimesteps=0;
 
 // Create a char array with enough space for the concatenated result
 char tagid_listen[50]; // Adjust size as needed
@@ -154,6 +158,7 @@ void setup()
         Serial.print("Presence value: ");
         Serial.println(value);
         presence=value;
+        runtimesteps=0;
       } else {
         Serial.println("No arguments in the OSC message.");
       }
@@ -207,63 +212,78 @@ void OSCTask(void * parameter) {
         //OscWiFi.update();
         //OscWiFi.send(host, port, tagid,current_tag_position[0], current_tag_position[1],current_distance_rmse);
         OscWiFi.send(host, port, tagid,ranges[0],ranges[1],ranges[2],ranges[3],ranges[4],ranges[5],ranges[6],ranges[7],ranges[8],ranges[9]);
-        /*
-        Serial.print(ranges[0]);
-        Serial.print(" ");
-        Serial.print(ranges[1]);
-        Serial.print(" ");
-        Serial.print(ranges[2]);
-        Serial.print(" ");
-        Serial.println(ranges[3]);
-        */
-        //char message[128];
-        //snprintf(message, sizeof(message), "{'tagid':'%s','x':%.2f,'y':%.2f,'error':%.2f}", tagid, current_tag_position[0], current_tag_position[1], current_distance_rmse);
-        //Serial.println(message);
-        //char message[5]="hola";
-        //sendMessage(message);
-        
-        /*
-        //sound part
-        if (presence > 0.2) {
-            // Generate a click sound
-            dac_output_voltage(DAC_CHANNEL_1, 255); // Set DAC to maximum voltage
-            delayMicroseconds(100); // Duration of the click
-            dac_output_voltage(DAC_CHANNEL_1, 0);   // Set DAC to zero voltage
-            delayMicroseconds(100); // Duration of the silence after click
-        }
-        
-        // Calculate the delay between clicks based on presence
-        int delayBetweenClicks = (1.0 - presence) * 1000; // Adjust this multiplier as needed
-        
-        // Wait for the calculated delay time
-        delay(delayBetweenClicks);
-        */
 
+        //Serial.println("sending osc");
+        
+        runtimesteps+=1;
+        if (runtimesteps>20){
+          //long time since messages from server, let's decrease presence
+          presence-=0.01;
+          if (presence<0.0){
+            presence=0.0;
+          }
+        }
         delay(50);
     }
 }
-
+/*
 void soundTask(void * parameter) {
-    //float presence = 0.1;  // Example presence value, you can change this dynamically in your code
+    int volume = 15;  // Volume level from 0 to 255
+    int totalSteps = 100;  // Variable to control the total number of steps in the loop
 
     while (true) {
-        if (presence > 0.2) {
-            // Generate a click sound
-            dac_output_voltage(DAC_CHANNEL_1, 255); // Set DAC to maximum voltage
-            delayMicroseconds(100); // Duration of the click
-            dac_output_voltage(DAC_CHANNEL_1, 0);   // Set DAC to zero voltage
-            delayMicroseconds(100); // Duration of the silence after click
+        // Calculate the number of active steps in the loop based on soundpresence
+        int numActiveSteps = (int)(soundpresence * totalSteps);
+        int activeInterval = numActiveSteps > 0 ? totalSteps / numActiveSteps : totalSteps; // Calculate interval for active steps
+
+        for (int i = 0; i < totalSteps; ++i) {
+            if (i % activeInterval == 0 && soundpresence > 0.2) {
+                // Generate a click sound on active steps
+                dac_output_voltage(DAC_CHANNEL_1, volume); // Set DAC to the specified volume
+                delayMicroseconds(100); // Duration of the click
+                dac_output_voltage(DAC_CHANNEL_1, 0);   // Set DAC to zero voltage
+                //Serial.println("active step");
+            } else {
+                //Serial.println("silence step");
+            }
+
+            // Short fixed delay between each step
+            delayMicroseconds(100); // Fixed small delay between steps
         }
         
-        // Calculate the delay between clicks based on presence
-        int delayBetweenClicks = (1.0 - presence) * 1000; // Adjust this multiplier as needed
-        
-        // Wait for the calculated delay time
-        //Serial.print("delayBetweenClicks: ");
-        //Serial.println(delayBetweenClicks);
-        delay(delayBetweenClicks);
+        // Dynamic adjustment of soundpresence for demonstration (modify as needed)
+        if (presence < soundpresence) {
+            soundpresence -= soundpresencestep;
+        } else {
+            soundpresence += soundpresencestep;
+        }
+
+        // Optional: Add a delay after completing the loop
+        delay(100); // Small delay before the next loop iteration
     }
 }
+*/
+void soundTask(void * parameter) {
+  //float presence = 0.5;  // Example dynamic presence value, simulate sensor input
+  int volume = 26;      // Maximum DAC output for clear clicks
+
+  while (true) {
+    int timer = 1000;  // Initialize timer 
+
+    while (timer > 0) {
+      // Reduce the timer more significantly if presence is high
+      timer -= (int)(2000 * pow(presence, 2)) + 1; // Exponential countdown with higher presence
+      delay(100);  // Wait 100ms before next check or action
+    }
+    // Make a click
+    dac_output_voltage(DAC_CHANNEL_1, volume); // Set DAC to the specified volume
+    delayMicroseconds(100); // Duration of the click
+    dac_output_voltage(DAC_CHANNEL_1, 0);   // Set DAC to zero voltage
+  }
+}
+
+
+
 /*
 // OSC message handler
 void onOscMessageReceived(OSCMessage &msg) {

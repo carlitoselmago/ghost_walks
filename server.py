@@ -19,7 +19,7 @@ import itertools
 LISTEN_IP = "0.0.0.0"  # Listen on all available network interfaces
 LISTEN_PORT = 8888     # Must match the port used by the ESP32
 
-SEND_IP = "192.168.10.255"  # Replace with the actual IP address of your ESP32
+SEND_IP = "192.168.2.255"  # Replace with the actual IP address of your ESP32
 SEND_PORT = 8888
 
 anchor_positions = {
@@ -298,7 +298,7 @@ try:
 
             screen.fill(WHITE)  # Fill the screen with white before drawing
 
-            #heatmap_matrix = DB.generateHeatMapMatrix(anchor_positions,sizeY, sizeX)
+            heatmap_matrix = DB.generateHeatMapMatrix(anchor_positions,sizeY, sizeX)
             draw_heatmap(heatmap_matrix, sizeX, scale, min_x, min_y)  # Draw the heatmap first
 
             active_anchors = anchor_positions.keys()
