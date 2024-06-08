@@ -181,25 +181,7 @@ def draw_heatmap(matrix):
             px_pos = int((x * step) + padding)
             py_pos = int((y * step) + padding)
             pygame.draw.rect(screen, color, (px_pos, py_pos, step, step))
-           
-    """
-    step_x = (display_width - rmse_bar_width) / size
-    step_y = display_height / size
-    for i in range(size):
-        for j in range(size):
-            try:
-               
-                value = float(matrix[i][j])  # Ensure the value is a float
-                # Calculate the color based on the value
-                red = int(value * 255)
-                green = int((1 - value) * 255)
-                color = (red, green, 0)
-                px_pos = int((i * step_x) + 50)
-                py_pos = int(display_height - ((j * step_y) + 50))
-                pygame.draw.rect(screen, color, (px_pos, py_pos, step_x, step_y))
-            except:
-                pass
-    """
+
 
 def osc_handler(addr, *msg):
     global ranges, x, y, rmse, max_error
@@ -283,10 +265,6 @@ def send_message_to_esp32(message, address):
         print(f"An error occurred: {e}")
 
 if args.gui:
-    #heatmap_cell_size = 50  # Adjust this value to change the density of the heatmap
-    #sizeX = (display_width - rmse_bar_width) // heatmap_cell_size
-    #sizeY = display_height // heatmap_cell_size
-    
     heatmap_matrix = DB.generateHeatMapMatrix(min_x,max_x,min_y,max_y)
 
 
