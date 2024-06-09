@@ -1,11 +1,3 @@
-// currently tag is module #5
-// this version is 2D (X,Y) only, 4 or more anchors (overdetermined linear least square solution)
-// The Z coordinates of anchors and tag are all assumed to be zero, so for highest accuracy
-// the anchors should be approximately in the same horizontal plane as the tag.
-// S. James Remington 1/2022
-
-// This code does not average position measurements!
-
 #include <SPI.h>
 #include <WiFi.h>
 //#include <WiFiUdp.h>
@@ -15,22 +7,17 @@
 #include "driver/dac.h"
 #include <string.h>
 
-//#define DEBUG_TRILAT  //prints in trilateration code
-//#define DEBUG_DIST     //print anchor distances
-
 #define SPI_SCK 18
 #define SPI_MISO 19
 #define SPI_MOSI 23
 #define DW_CS 4
-
-
 
 // connection pins
 const uint8_t PIN_RST = 27; // reset pin
 const uint8_t PIN_IRQ = 34; // irq pin
 const uint8_t PIN_SS = 4;   // spi select pin
 
-const char *tagid = "/tag1";
+const char *tagid = "/tag2";
 const char ssid[] = "MANGO";
 const char password[] = "remotamente";
 const char host[] = "192.168.2.255";//"192.168.10.255";//"192.168.1.139";  // Set this to your computer's IP address
@@ -53,9 +40,6 @@ char tagid_listen[50]; // Adjust size as needed
 // leftmost two bytes below will become the "short address"
 char tag_addr[] = "7D:00:22:EA:82:60:3B:9C";
 
-// variables for position determination
-#define N_ANCHORS 4
-#define ANCHOR_DISTANCE_EXPIRED 5000   //measurements older than this are ignore (milliseconds) 
 
 WiFiUDP udp;
 
@@ -108,9 +92,9 @@ void setup()
     "UDP Task",       // Name of the task
     2000,               // Stack size (in words)
     NULL,               // Task input parameter
-    2,                  // Priority of the task
+    3,                  // Priority of the task
     &OSCTaskHandle,  // Task handle
-    0                 // core to run the task
+    1                 // core to run the task
   );
 
 
@@ -123,7 +107,7 @@ void setup()
     NULL,               // Task input parameter
     4,                  // Priority of the task
     &soundTaskHandle ,   // Task handle
-    0                 // core to run the task
+    1                 // core to run the task
   );
   
   // Set up OSC listener for the specific address
@@ -134,8 +118,8 @@ void setup()
       if (msg.size() > 0) {
         // Retrieve and print the first argument as a float
         float value = msg.arg<float>(0);
-        Serial.print("Presence value: ");
-        Serial.println(value);
+        //Serial.print("Presence value: ");
+        //Serial.println(value);
         presence=value;
         runtimesteps=0;
       } else {
@@ -184,6 +168,15 @@ void sendMessage(const char *message) {
 
 void OSCTask(void * parameter) {
     while (true) {
+
+        //debug distances
+        Serial.print("distances: ");
+        Serial.print(ranges[0]);
+        Serial.print(" ");
+        Serial.print(ranges[1]);
+        Serial.print(" ");
+        Serial.print(ranges[2]);
+        Serial.println(" ");
 
         OscWiFi.send(host, port, tagid,ranges[0],ranges[1],ranges[2],ranges[3],ranges[4],ranges[5],ranges[6],ranges[7],ranges[8],ranges[9]);
 
