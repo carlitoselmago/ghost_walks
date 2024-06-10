@@ -2,7 +2,7 @@
 #include "DW1000Ranging.h"     //https://github.com/thotro/arduino-dw1000
 
 //change the first number from the range 81,82,83,84,85,86 for faster processing
-#define ANCHOR_ADD "85:17:5B:D5:A9:9A:E2:9C"
+#define ANCHOR_ADD "83:17:5B:D5:A9:9A:E2:9C"
  
 #define SPI_SCK 18
 #define SPI_MISO 19

@@ -20,17 +20,15 @@ import math
 LISTEN_IP = "0.0.0.0"  # Listen on all available network interfaces
 LISTEN_PORT = 8888     # Must match the port used by the ESP32
 
-SEND_IP = "192.168.2.255"  # Replace with the actual IP address of your ESP32
+SEND_IP = "192.168.10.255"  # Replace with the actual IP address of your ESP32
 SEND_PORT = 8888
 
 anchor_positions = {
     "1": (0.0, 0.0),
-    "2":(3,0),#"2": (5.6, 0.6),
-    "3":(2.8,2),
-    "4":(0.7,2.0),
-    #"5":(0,6)
-    #"3": (-1.0, 6.0),
-    #"4": (7.0, 5.5)
+    "2":(10.0,0.0),#"2": (5.6, 0.6),
+    "3":(0.0,7.0),
+    "4":(10.0,5.0)
+    
     # Add more anchors as needed
 }
 
@@ -162,6 +160,7 @@ def draw_rmse_bar(screen, addr,rmse):
         screen.blit(text, (bar_x - 60, 10))
 
 def draw_grid(active_anchors, scale, min_x, min_y):
+    #print(" anchor_positions.items()", anchor_positions.items())
     for anchor_id, (ax_pos, ay_pos) in anchor_positions.items():
         px_pos = int((ax_pos - min_x) * scale + 50)
         py_pos = int(display_height - ((ay_pos - min_y) * scale + 50))
@@ -311,7 +310,7 @@ try:
 
             screen.fill(WHITE)  # Fill the screen with white before drawing
 
-            heatmap_matrix = DB.generateHeatMapMatrix(min_x,max_x,min_y,max_y)
+            #heatmap_matrix = DB.generateHeatMapMatrix(min_x,max_x,min_y,max_y)
             draw_heatmap(heatmap_matrix)  # Draw the heatmap first
       
             active_anchors = anchor_positions.keys()

@@ -17,10 +17,10 @@ const uint8_t PIN_RST = 27; // reset pin
 const uint8_t PIN_IRQ = 34; // irq pin
 const uint8_t PIN_SS = 4;   // spi select pin
 
-const char *tagid = "/tag2";
+const char *tagid = "/tag1";
 const char ssid[] = "MANGO";
 const char password[] = "remotamente";
-const char host[] = "192.168.2.255";//"192.168.10.255";//"192.168.1.139";  // Set this to your computer's IP address
+const char host[] = "192.168.10.255";//"192.168.10.255";//"192.168.1.139";  // Set this to your computer's IP address
 const uint16_t port = 8888;
 
 
@@ -141,6 +141,8 @@ void newRange()
 {
   int i;  //index of this anchor, expecting values 1 to 7
   int index = DW1000Ranging.getDistantDevice()->getShortAddress() & 0x07;
+  //Serial.print("index: ");
+  //Serial.println(index);
   float range = DW1000Ranging.getDistantDevice()->getRange();
   ranges[index-1]=range;
   return;
@@ -176,6 +178,8 @@ void OSCTask(void * parameter) {
         Serial.print(ranges[1]);
         Serial.print(" ");
         Serial.print(ranges[2]);
+        Serial.print(" ");
+        Serial.print(ranges[3]);
         Serial.println(" ");
 
         OscWiFi.send(host, port, tagid,ranges[0],ranges[1],ranges[2],ranges[3],ranges[4],ranges[5],ranges[6],ranges[7],ranges[8],ranges[9]);
@@ -193,7 +197,7 @@ void OSCTask(void * parameter) {
 }
 void soundTask(void * parameter) {
  
-  int volume = 26;      // Maximum DAC output for clear clicks
+  int volume = 255;      // Maximum DAC output for clear clicks
 
   while (true) {
     int timer = 1000;  // Initialize timer 
