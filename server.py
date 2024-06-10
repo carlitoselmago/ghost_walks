@@ -26,7 +26,9 @@ SEND_PORT = 8888
 anchor_positions = {
     "1": (0.0, 0.0),
     "2":(3,0),#"2": (5.6, 0.6),
-    "3":(1,2)
+    "3":(2.8,2),
+    "4":(0.7,2.0),
+    #"5":(0,6)
     #"3": (-1.0, 6.0),
     #"4": (7.0, 5.5)
     # Add more anchors as needed
@@ -82,7 +84,7 @@ if args.gui:
     import pygame
     pygame.init()
     display_height = 600
-    rmse_bar_width = 10  # Width reserved for RMSE bar
+    rmse_bar_width = 100  # Width reserved for RMSE bar
     scale, display_width, min_x, min_y = get_fixed_scale_factors(anchor_positions, display_height, rmse_bar_width)
     screen = pygame.display.set_mode((display_width + rmse_bar_width, display_height))
     pygame.display.set_caption("UWB Positioning System")
@@ -91,7 +93,7 @@ DB = db(presencemult,blocksize)
 
 ranges = {}
 maxdistance = 20  # distance which if greater will be rejected
-max_error = 3  # if rmse is greater than this, the values won't be accepted
+max_error = 10  # if rmse is greater than this, the values won't be accepted
 
 
 
@@ -137,13 +139,15 @@ def calculate_position(distances, anchor_positions):
 def draw_rmse_bar(screen, addr,rmse):
     index=int(addr[4:8])
     
+    barwidth=10
+
     if rmse>0.0:
         # Check if rmse is infinite or NaN
         if math.isinf(rmse) or math.isnan(rmse):
             rmse = 0  # or some default value
-        bar_height = int((rmse / 5.0) * (display_height - 100))  # Scale RMSE to bar height (max 500 pixels)
-        bar_width = rmse_bar_width - 20
-        bar_x = display_width - rmse_bar_width + int(80*index) # Position on the right
+        bar_height = int((rmse / 20.0) * (display_height - 100))  # Scale RMSE to bar height (max 500 pixels)
+        bar_width = barwidth
+        bar_x = display_width - barwidth + int(barwidth*index) # Position on the right
         bar_y = 50 + ((display_height - 100) - bar_height)  # Position the bar from the top
 
         # Draw the bar background
@@ -238,7 +242,7 @@ def osc_handler(addr, *msg):
             if presence>0.95:
                 presence=0.95
             OSCsender.send_message(addr+"_listen", presence)
-            print(addr,position, "rmse:",rmse,"presence:",presence)
+            print("OSC rec:",addr,position, "rmse:",rmse,"presence:",presence)
             #print("msg[0],x,y", msg[0], x, y)
             #print("addr, x, y",addr, x, y)
             DB.insertPos(addr,position[0], position[1])
@@ -307,7 +311,7 @@ try:
 
             screen.fill(WHITE)  # Fill the screen with white before drawing
 
-            #heatmap_matrix = DB.generateHeatMapMatrix(min_x,max_x,min_y,max_y)
+            heatmap_matrix = DB.generateHeatMapMatrix(min_x,max_x,min_y,max_y)
             draw_heatmap(heatmap_matrix)  # Draw the heatmap first
       
             active_anchors = anchor_positions.keys()

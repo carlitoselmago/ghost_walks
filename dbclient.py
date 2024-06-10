@@ -8,6 +8,7 @@ import sys
 class db():
 
     limitrows=1000
+    valuepervisit=0.05
 
     params={"host":'localhost',
             "user":'ghost',
@@ -28,7 +29,7 @@ class db():
    
         conn=self.conn = pymysql.connect(host=self.params["host"],user=self.params["user"],password=self.params["password"],database=self.params["database"])
         cursor = conn.cursor()
-        value = 1.0
+        value = self.valuepervisit
         sql = "INSERT INTO `positions` (`tagname`, `x`, `y`, `amount`) VALUES (%s, %s, %s, %s)"
         
         try:
