@@ -33,7 +33,7 @@ anchor_positions = {
 }
 
 blocksize=0.2 # grid step in meters
-presencemult=0.01 #values from each position will be multiplied by this value
+presencemult=0.05 #values from each position will be multiplied by this value
 
 tags={}
 
