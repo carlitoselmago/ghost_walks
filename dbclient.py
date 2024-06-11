@@ -4,6 +4,7 @@ import numpy as np
 import time
 import logging
 import sys
+import datetime
 
 class db():
 
@@ -71,8 +72,19 @@ class db():
         result = self.cursor.fetchone()
         total=result["count"]
         #get specific area count
-        sql = "SELECT SUM(amount) as count FROM `positions` WHERE `x`>"+str(x-self.blocksize)+" AND `x`<"+str(x+self.blocksize)+" AND `y`>"+str(y-self.blocksize)+" AND `y`<"+str(y+self.blocksize)+";"
-
+        # Calculate the time 15 minutes ago
+        time_threshold = datetime.datetime.now() - datetime.timedelta(minutes=15)
+        formatted_time_threshold = time_threshold.strftime('%Y-%m-%d %H:%M:%S')
+        
+        sql = (
+            "SELECT SUM(amount) as count FROM `positions` "
+            "WHERE `x` > " + str(x - self.blocksize) + " "
+            "AND `x` < " + str(x + self.blocksize) + " "
+            "AND `y` > " + str(y - self.blocksize) + " "
+            "AND `y` < " + str(y + self.blocksize) + " "
+            "AND `timestamp` < '" + formatted_time_threshold + "' "
+            "LIMIT " + str(self.limitrows) + ";"
+        )
         self.cursor.execute(sql)
         result = self.cursor.fetchone()
         #print("result",result)
