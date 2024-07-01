@@ -1,5 +1,5 @@
 # Ghost walks UWB
-Code for Server (Linux), tag and anchor (ESP32)
+Code for Server (Linux), tag and anchor (Arduino C++)
 
 UDP Com port: 8888
 
