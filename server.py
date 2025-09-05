@@ -230,7 +230,7 @@ def osc_handler(addr, *msg):
 
         position, error_percentage = calculate_position(ranges[addr][0:len(anchor_positions)], anchor_positions)
         rmse = error_percentage / 10
-        
+        print("position",position)
         tags[addr]=[position[0], position[1],rmse]
 
         if rmse < max_error:

@@ -85,6 +85,7 @@ class db():
             "AND `timestamp` < '" + formatted_time_threshold + "' "
             "LIMIT " + str(self.limitrows) + ";"
         )
+        print(sql)
         self.cursor.execute(sql)
         result = self.cursor.fetchone()
         #print("result",result)
